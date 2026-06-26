@@ -81,8 +81,7 @@ jobs:
           name: OhCanvas-${{ matrix.arch }}
           path: |
             src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
-            src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi.zip
-            src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi.zip.sig
+            src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi.sig
 
   create-release:
     needs: build
@@ -96,11 +95,35 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: OhCanvas-*
-          merge-multiple: true
+          merge-multiple: false
 
       - name: Flatten bundle files
+        shell: bash
         run: |
-          find . -type f \( -name "*.app.tar.gz*" -o -name "*.msi.zip*" -o -name "*.msi" -o -name "*.dmg" \) -exec sh -c 'cp "$1" .' _ {} \;
+          for dir in OhCanvas-*/; do
+            arch="${dir#OhCanvas-}"
+            arch="${arch%/}"
+            case "$arch" in
+              aarch64) plat="darwin-aarch64" ;;
+              x86_64)  plat="darwin-x86_64" ;;
+              *)       plat="$arch" ;;
+            esac
+            # Rename updater archives with arch info
+            for f in "$dir"*.app.tar.gz*; do
+              [ -f "$f" ] || continue
+              base="${f%.sig}"
+              ext="${f#$base}"
+              name="OhCanvas_0.1.0_$arch.app.tar.gz$ext"
+              cp "$f" "$name"
+            done
+            # Copy DMG files (already have arch in name)
+            cp "$dir"*.dmg . 2>/dev/null || true
+            # Copy MSI + MSI.sig (Windows)
+            cp "$dir"*.msi . 2>/dev/null || true
+            cp "$dir"*.msi.sig . 2>/dev/null || true
+          done
+          ls -la *.dmg *.app.tar.gz* *.msi* 2>/dev/null || echo "(no bundle files at root)"
+
       - name: Generate updater metadata
         run: node .github/workflows/generate-update-json.mjs
 
@@ -113,6 +136,5 @@ jobs:
             *.app.tar.gz
             *.app.tar.gz.sig
             *.msi
-            *.msi.zip
-            *.msi.zip.sig
+            *.msi.sig
             latest-release.json
