@@ -54,6 +54,7 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATER_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.UPDATER_PRIVATE_KEY_PASSWORD }}
+          MACOSX_DEPLOYMENT_TARGET: "10.15"
 
       - name: Upload artifacts (macOS)
         if: runner.os == 'macOS'

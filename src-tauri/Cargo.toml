@@ -14,6 +14,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-llm = { path = "tauri-plugin-llm" }
+serde_json = "1"
 
 # Cross-platform speech-to-text (whisper.cpp via whisper-rs).
 # macOS uses the Metal backend; Windows/Linux use CPU here (enable "vulkan"/"cuda"
