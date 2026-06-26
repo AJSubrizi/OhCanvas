@@ -6,164 +6,104 @@ OhCanvas is an open-source desktop app — an infinite whiteboard where you spaw
 
 ---
 
-## ✨ Features (MVP)
-
-### Canvas
-| Feature | Stato |
-|---|---|
-| ✅ Pan & zoom infinito | |
-| ✅ Workspaces multipli (stile Ubuntu) | contenuto e sfondo indipendenti |
-| ✅ Temi colore (Midnight, Outrun, Aurora, Mono) | |
-| ✅ Sfondi animati (7 video + copertina) | |
-
-### Nodi
-| Feature | Stato |
-|---|---|
-| ✅ Terminali reali (Pi, Claude Code, Codex, Cursor, Hermes, shell) | PTY via sidecar Node.js |
-| ✅ Nodi Browser | iframe navigabili con annotation overlay (penna, freccia, testo) |
-| ✅ Note gialle sticky + Blocchi di testo grandi | |
-| ✅ Forme (rettangolo, ellisse) | |
-| ✅ Ridimensionamento e selezione nodi | |
-
-### Strumenti di disegno (board-level)
-| Feature | Stato |
-|---|---|
-| ✅ Penna (tratto libero) sulla canvas | |
-| ✅ Freccia (con punta, ombra) | |
-| ✅ Gomma | cancellazione per segmento più vicino |
-| ✅ Palette colori (4 preset) | |
-
-### Browser annotation overlay
-| Feature | Stato |
-|---|---|
-| ✅ Penna (tratto libero) sulla pagina web | |
-| ✅ Freccia con punta sagomata | |
-| ✅ Testo annotato | trascinabile, selezionabile |
-| ✅ Palette colori (5 preset + custom picker) | |
-| ✅ Invio screenshot annotato al terminale | come SVG via `@image` |
-
-### Preview dock
-| Feature | Stato |
-|---|---|
-| ✅ Rilevamento automatico dev server | |
-| ✅ Preview responsive (mobile/desktop) | |
-| ✅ Annotazioni anche nel dock | |
-
-### Comandi vocali e AI
-| Feature | Stato |
-|---|---|
-| ✅ Riconoscimento vocale (Whisper, plugin nativo Tauri) | |
-| ✅ Modello LLM locale (SmolLM2, plugin Tauri custom) | |
-| ✅ Controllo canvas da CLI agent | comandi `OHCANVAS` su stdout |
-| ✅ Modello LLM configurabile (OpenAI, Anthropic, OpenRouter, Ollama…) | |
-
-### Media player
-| Feature | Stato |
-|---|---|
-| ✅ Spotify embed (login + ricerca playlist) | |
-| ✅ YouTube Music embed | |
-| ✅ Apple Music embed | |
-
----
-
-## 🚀 Installazione
+## 🚀 Installation
 
 ```bash
-# Prerequisiti: Node 20+, pnpm 9+, Rust 1.77+, Xcode CLI Tools (macOS)
+# Prerequisites: Node 20+, pnpm 9+, Rust 1.77+, Xcode CLI Tools (macOS)
 
 git clone https://github.com/subrizi/ohcanvas.git
 cd ohcanvas
 pnpm install
 
-# Sviluppo (sidecar + finestra Tauri)
+# Development (sidecar + Tauri window)
 pnpm dev
 
-# Solo frontend web (nessuna finestra Tauri)
+# Web-only frontend (no Tauri window)
 pnpm dev:web
 
-# Build per distribuzione
+# Production build
 pnpm tauri build
 ```
 
-> **Pi CLI**: per usare Pi, esegui `pi` una volta nel terminale per autenticarti.
+> **Pi CLI**: to use Pi, run `pi` once in your terminal to authenticate.
 
 ---
 
-## 🧱 Struttura progetto
+## 🧱 Project structure
 
 ```
 ohcanvas/
 ├── src/                          # React + TypeScript frontend
 │   ├── App.tsx                   # Root component
 │   ├── main.tsx                  # Entry point
-│   ├── styles.css                # Stili globali (tema scuro, glassmorphism)
-│   ├── state/store.ts            # Zustand store (tutto lo stato globle)
+│   ├── styles.css                # Global styles (dark theme, glassmorphism)
+│   ├── state/store.ts            # Zustand store (all global state)
 │   ├── canvas/
-│   │   ├── Canvas.tsx            # Stage Konva + logica di disegno (board-level)
-│   │   ├── nodes.ts              # Spawn nodi + auto-tiling
-│   │   ├── types.ts              # Interfacce CanvasNode
+│   │   ├── Canvas.tsx            # Konva Stage + board-level drawing logic
+│   │   ├── nodes.ts              # Node spawning + auto-tiling
+│   │   ├── types.ts              # CanvasNode interfaces
 │   │   ├── annotations/
-│   │   │   ├── AnnotationOverlay.tsx  # Overlay SVG per annotazioni browser
-│   │   │   └── useAnnotations.ts      # Hook stato annotazioni
+│   │   │   ├── AnnotationOverlay.tsx  # SVG overlay for browser annotations
+│   │   │   └── useAnnotations.ts      # Annotation state hook
 │   │   └── nodes/
-│   │       ├── BrowserNode.tsx   # Nodo browser web
-│   │       ├── TerminalNode.tsx  # Terminale xterm
-│   │       ├── ShellNode.tsx     # Shell terminale
-│   │       ├── NoteNode.tsx      # Nota sticky gialla
-│   │       ├── TextNode.tsx      # Blocco testo grande
-│   │       └── ShapeNode.tsx     # Rettangolo / ellisse
+│   │       ├── BrowserNode.tsx   # Web browser node
+│   │       ├── TerminalNode.tsx  # xterm terminal
+│   │       ├── ShellNode.tsx     # Shell terminal
+│   │       ├── NoteNode.tsx      # Yellow sticky note
+│   │       ├── TextNode.tsx      # Large text block
+│   │       └── ShapeNode.tsx     # Rectangle / ellipse
 │   ├── ui/
 │   │   ├── Navbar.tsx            # Toolbar + workspace switcher
-│   │   ├── CommandBar.tsx        # Barra comandi (testo + voce)
-│   │   ├── PreviewDock.tsx       # Pannello preview live
-│   │   ├── backgrounds.tsx       # Sfondi animati
-│   │   ├── themes.ts             # Temi colore
-│   │   ├── media.tsx             # Player Spotify/YouTube/Apple Music
-│   │   └── voice.ts              # Riconoscimento vocale Whisper
+│   │   ├── CommandBar.tsx        # Command bar (text + voice)
+│   │   ├── PreviewDock.tsx       # Live preview panel
+│   │   ├── backgrounds.tsx       # Animated backgrounds
+│   │   ├── themes.ts             # Color themes
+│   │   ├── media.tsx             # Spotify/YouTube/Apple Music player
+│   │   └── voice.ts              # Whisper voice recognition
 │   └── bridge/
-│       ├── protocol.ts           # Tipi messaggi WebSocket
-│       └── sidecar.ts            # Client WebSocket sidecar
+│       ├── protocol.ts           # WebSocket message types
+│       └── sidecar.ts            # WebSocket sidecar client
 │
-├── sidecar/                      # Backend Node.js (PTY + agent runner)
+├── sidecar/                      # Node.js backend (PTY + agent runner)
 │   └── src/
-│       ├── index.ts              # Server WebSocket
-│       ├── terminals.ts          # Gestione ciclo vita PTY
+│       ├── index.ts              # WebSocket server
+│       ├── terminals.ts          # PTY lifecycle management
 │       └── ...
 │
-├── src-tauri/                    # Shell Tauri (Rust)
+├── src-tauri/                    # Tauri shell (Rust)
 │   ├── main.rs
-│   ├── tauri-plugin-llm/         # Plugin LLM custom (SmolLM2)
+│   ├── tauri-plugin-llm/         # Custom LLM plugin (SmolLM2)
 │   └── tauri.conf.json
 │
-├── public/backgrounds/           # Video sfondo animati
-└── docs/                         # Script demo
+├── public/backgrounds/           # Animated background videos
+└── docs/                         # Demo scripts
 ```
 
 ---
 
-## 🎮 Utilizzo rapido
+## 🎮 Quick start
 
-| Azione | Come fare |
+| Action | How |
 |---|---|
-| **Aggiungere un terminale** | Click `+ CLI` nella navbar, scegli un agente |
-| **Muovere / ridimensionare** | Trascina un nodo, ridimensiona dagli angoli |
-| **Aggiungere un browser** | Click pulsante 🌐 nella navbar |
-| **Annotare una pagina web** | Click ✎ sul browser node, scegli strumento (T / ↗ / ✎) |
-| **Disegnare sulla canvas** | Seleziona penna o freccia nella navbar, trascina |
-| **Cancellare disegni** | Gomma nella navbar, passa sopra i tratti |
-| **Prendere appunti** | 📝 (nota) e **T** (testo) |
-| **Cambiare workspace** | Click quadrati numerati a sinistra della navbar |
-| **Comando rapido** | Scrivi `/` nella command bar |
-| **Voce** | Click 🎤 nella command bar |
+| **Add a terminal** | Click `+ CLI` in the navbar, pick an agent |
+| **Move / resize** | Drag a node, resize from its corners |
+| **Add a browser** | Click the 🌐 button in the navbar |
+| **Annotate a web page** | Click ✎ on the browser node, pick a tool (T / ↗ / ✎) |
+| **Draw on the canvas** | Select pen or arrow in the navbar, drag to draw |
+| **Erase drawings** | Select eraser in the navbar, brush over strokes |
+| **Take notes** | 📝 (note) and **T** (text) buttons |
+| **Switch workspaces** | Click the numbered squares left of the navbar |
+| **Quick command** | Type `/` in the command bar |
+| **Voice** | Click the 🎤 mic button in the command bar |
 
-### Comandi OHCANVAS (da un agente CLI)
+### OHCANVAS commands (from a CLI agent)
 
-Un agente AI può manipolare la canvas stampando comandi JSON su stdout:
+An AI agent can manipulate the canvas by printing JSON commands to stdout:
 
 ```
 OHCANVAS {"action":"open_browser","url":"http://localhost:3000"}
 OHCANVAS {"action":"run_shell","command":"pnpm dev"}
-OHCANVAS {"action":"add_note","text":"Idea da esplorare"}
+OHCANVAS {"action":"add_note","text":"Idea to explore"}
 OHCANVAS {"action":"kill_terminal"}
 OHCANVAS {"action":"focus_terminal"}
 ```
@@ -172,38 +112,38 @@ OHCANVAS {"action":"focus_terminal"}
 
 ## ⚙️ Tech stack
 
-| Layer | Tecnologia |
+| Layer | Technology |
 |---|---|
 | **Frontend** | React 18, TypeScript, Vite 6, Konva / react-konva, Zustand |
-| **Terminali** | xterm.js + @lydell/node-pty |
+| **Terminals** | xterm.js + @lydell/node-pty |
 | **Desktop** | Tauri 2 (Rust) |
 | **Backend** | Node.js sidecar (WebSocket) |
-| **Voce** | Whisper (plugin nativo Tauri) |
-| **LLM locale** | SmolLM2 (plugin Tauri custom) |
+| **Voice** | Whisper (native Tauri plugin) |
+| **Local LLM** | SmolLM2 (custom Tauri plugin) |
 
 ---
 
-## 🧪 Stato — MVP
+## 🧪 Status — MVP
 
-Prima release funzionante. La roadmap prossime iterazioni:
+Initial working release. Upcoming roadmap:
 
-- [x] Terminali PTY reali (Pi, Claude Code, Codex, Cursor, Hermes, shell)
-- [x] Nodi browser, nota, testo, forma
-- [x] Disegno board-level (penna, freccia, gomma)
-- [x] Annotazioni browser (penna, freccia, testo)
-- [x] Preview live con rilevamento dev server
-- [x] Comandi vocali Whisper
-- [x] Workspace multipli
-- [x] Player multimediale (Spotify, YouTube Music, Apple Music)
-- [x] Controllo canvas da CLI agent
-- [ ] Prestazioni con 10+ terminali
-- [ ] Persistenza su file (invece di localStorage)
-- [ ] Sidecar come binario Tauri
-- [ ] Build Windows / Linux
-- [ ] Selezione e modifica annotazioni (dopo il commit)
+- [x] Real PTY terminals (Pi, Claude Code, Codex, Cursor, Hermes, shell)
+- [x] Browser, note, text, shape nodes
+- [x] Board-level drawing (pen, arrow, eraser)
+- [x] Browser annotations (pen, arrow, text)
+- [x] Live preview with dev server detection
+- [x] Whisper voice commands
+- [x] Multiple workspaces
+- [x] Media player (Spotify, YouTube Music, Apple Music)
+- [x] Canvas control from CLI agent
+- [ ] Performance with 10+ terminals
+- [ ] File-based persistence (instead of localStorage)
+- [ ] Sidecar bundled as Tauri binary
+- [ ] Windows / Linux builds
+- [ ] Annotation selection and editing (post-commit)
 
 ---
 
-## 📄 Licenza
+## 📄 License
 
 MIT
