@@ -98,6 +98,9 @@ jobs:
           pattern: OhCanvas-*
           merge-multiple: true
 
+      - name: Flatten bundle files
+        run: |
+          find . -type f \( -name "*.app.tar.gz*" -o -name "*.msi.zip*" -o -name "*.msi" -o -name "*.dmg" \) -exec sh -c 'cp "$1" .' _ {} \;
       - name: Generate updater metadata
         run: node .github/workflows/generate-update-json.mjs
 
