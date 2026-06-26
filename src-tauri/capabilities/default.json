@@ -13,6 +13,7 @@
     "llm:default",
     "llm:allow-complete",
     "llm:allow-ensure-model",
-    "llm:allow-is-ready"
+    "llm:allow-is-ready",
+    "updater:default"
   ]
 }

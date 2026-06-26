@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useCanvasStore } from "../state/store";
+import { check } from "@tauri-apps/plugin-updater";
 import { tileTerminals, nextAgentName, spawnBrowserNode, spawnNoteNode } from "../canvas/nodes";
 import { sidecar } from "../bridge/sidecar";
 import { CLI_OPTIONS } from "./cliOptions";
@@ -23,7 +24,7 @@ import {
 import WorkspaceSwitcher from "./WorkspaceSwitcher";
 
 // TODO: point this at the real repo once it's published.
-const GITHUB_REPO_URL = "https://github.com/your-org/ohcanvas";
+const GITHUB_REPO_URL = "https://github.com/AJSubrizi/OhCanvas";
 
 export default function Navbar() {
   const [cliOpen, setCliOpen] = useState(false);
@@ -54,6 +55,35 @@ export default function Navbar() {
   const spotifyPlayerOpen = useCanvasStore((s) => s.spotifyPlayerOpen);
   const setSpotifyEmbedUrl = useCanvasStore((s) => s.setSpotifyEmbedUrl);
   const setSpotifyPlayerOpen = useCanvasStore((s) => s.setSpotifyPlayerOpen);
+
+  const [updateState, setUpdateState] = useState<"idle" | "checking" | "available" | "downloading" | "ready" | "error">("idle");
+  const [updateError, setUpdateError] = useState("");
+
+  const handleUpdate = useCallback(async () => {
+    try {
+      setUpdateState("checking");
+      setUpdateError("");
+      const update = await check();
+      if (!update) {
+        setUpdateState("idle");
+        return;
+      }
+      setUpdateState("available");
+      const confirmed = confirm(`Update ${update.version} available. Download and install?`);
+      if (!confirmed) {
+        setUpdateState("idle");
+        return;
+      }
+      setUpdateState("downloading");
+      await update.downloadAndInstall();
+      setUpdateState("ready");
+      alert("Update installed. Please restart the app to apply.");
+    } catch (err) {
+      setUpdateState("error");
+      setUpdateError(String(err));
+      setTimeout(() => setUpdateState("idle"), 3000);
+    }
+  }, []);
 
   const toggleAuto = () => {
     const next = !autoArrange;
@@ -392,6 +422,19 @@ export default function Navbar() {
             hidden
             onChange={(event) => chooseBackground(event.target.files?.[0])}
           />
+          <div className="sidebar-settings__label">Update</div>
+          <button
+            className="sidebar-settings__action"
+            onClick={handleUpdate}
+            disabled={updateState === "checking" || updateState === "downloading"}
+          >
+            {updateState === "checking" ? "Checking…" :
+             updateState === "downloading" ? "Downloading…" :
+             updateState === "ready" ? "Restart to apply ✓" :
+             updateState === "error" ? `Error: ${updateError.slice(0, 40)}` :
+             updateState === "available" ? "Update available — click to install" :
+             "Check for updates"}
+          </button>
         </div>
       )}
 

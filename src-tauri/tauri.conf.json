@@ -37,5 +37,14 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/AJSubrizi/OhCanvas/releases/latest/download/latest-release.json"
+      ],
+      "pubkey": "9lC9HVG9ffapd6/fteSSGwT99OWEpSJdpGL7wreDFcI="
+    }
   }
 }
