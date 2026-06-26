@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+
+# rust / tauri
+src-tauri/target/
+src-tauri/gen/
+
+# generated icon source
+icon-source.png
+
+# compiled swift stt helper (built via stt/build.sh)
+stt/stt-helper
+stt/stt-helper-bin
+stt/OhCanvasSTT.app

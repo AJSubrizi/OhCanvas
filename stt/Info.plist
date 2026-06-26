@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>com.ohcanvas.stt-helper</string>
+	<key>CFBundleName</key>
+	<string>OhCanvas STT</string>
+	<key>CFBundleExecutable</key>
+	<string>stt-helper</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>12.0</string>
+	<!-- Run as a background agent: no Dock icon, no menu bar. -->
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>OhCanvas needs microphone access to transcribe your voice commands.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>OhCanvas uses speech recognition to turn your voice into commands.</string>
+</dict>
+</plist>

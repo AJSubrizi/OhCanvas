@@ -1,0 +1,26 @@
+[package]
+name = "tauri-plugin-llm"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+description = "Local LLM inference (llama.cpp via llama-cpp-2) for the OhCanvas conductor"
+links = "tauri-plugin-llm"
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = "1"
+serde_json = "1"
+thiserror = "2"
+reqwest = { version = "0.12", features = ["blocking"] }
+
+# Cross-platform llama.cpp bindings. llama-cpp-sys-2 compiles llama.cpp in its
+# build script (same toolchain as whisper-rs: cmake + clang). Metal is enabled
+# automatically on macOS for GPU acceleration.
+[target.'cfg(target_os = "macos")'.dependencies]
+llama-cpp-2 = { version = "0.1", features = ["metal"] }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+llama-cpp-2 = { version = "0.1" }

@@ -1,0 +1,6 @@
+cargo:rerun-if-changed=permissions
+cargo:PERMISSION_FILES_PATH=/Users/subrizi/Desktop/OhCanvas/src-tauri/tauri-plugin-llm/target/debug/build/tauri-plugin-llm-2dddc1fc31a82b01/out/tauri-plugin-llm-permission-files
+cargo:rerun-if-env-changed=REMOVE_UNUSED_COMMANDS
+cargo:rustc-check-cfg=cfg(mobile)
+cargo:rustc-check-cfg=cfg(desktop)
+cargo:rustc-cfg=desktop

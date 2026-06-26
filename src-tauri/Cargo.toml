@@ -1,0 +1,31 @@
+[package]
+name = "ohcanvas"
+version = "0.1.0"
+description = "OhCanvas — multi-agent infinite canvas"
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-llm = { path = "tauri-plugin-llm" }
+
+# Cross-platform speech-to-text (whisper.cpp via whisper-rs).
+# macOS uses the Metal backend; Windows/Linux use CPU here (enable "vulkan"/"cuda"
+# in the platform's CI build for GPU acceleration).
+[target.'cfg(target_os = "macos")'.dependencies]
+tauri-plugin-stt = { version = "0.2", features = ["metal"] }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+tauri-plugin-stt = { version = "0.2" }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
