@@ -1,6 +1,6 @@
 # 🎨 OhCanvas
 
-**Infinite canvas with real terminals, browser nodes, drawing tools, and AI agent integration.**
+**Infinite canvas with real terminals, browser nodes, drawing tools, and AI agent integration.** 
 
 OhCanvas is an open-source desktop app — an infinite whiteboard where you spawn PTY-backed terminals, browse the web inside canvas nodes, draw arrows and freehand marks, take notes, and control everything from a CLI agent. Built with **Tauri 2 + React + Konva**.
 
