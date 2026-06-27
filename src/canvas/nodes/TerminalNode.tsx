@@ -5,7 +5,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import { sidecar } from "../../bridge/sidecar";
 import type { TerminalKind } from "../../bridge/protocol";
 import { useCanvasStore } from "../../state/store";
-import { retileTerminalsIfAuto } from "../nodes";
+import { retileTerminalsIfAuto, subscribeToViewport, getLatestViewportRect } from "../nodes";
 import type { CanvasNodeProps } from "../types";
 import {
   CheckIcon,
@@ -82,8 +82,31 @@ function TerminalNode({ id, data }: CanvasNodeProps<TerminalNodeData>) {
     // Using array + join avoids quadratic string concat in hot path
     let outputChunks: string[] = [];
     let writeScheduled = false;
+
+    // Offscreen culling: when the terminal node is scrolled out of the
+    // viewport (Canvas is infinite, most terminals are off-screen at any
+    // given moment), skip xterm.write() — the user can't see the output
+    // anyway, and each write triggers a render. We accumulate chunks in a
+    // bounded offscreen buffer; when the terminal becomes visible again
+    // we replay the buffer in a single write() call. xterm serializes
+    // write() calls internally, so live output that arrives mid-replay
+    // gets queued behind it without any extra coordination.
+    //
+    // Buffer cap: ~512 KB covers more than the 3000-line scrollback
+    // (~360 KB at ~120 B/line) so the user can still scroll back to the
+    // last visible content when the terminal returns. Older chunks are
+    // dropped FIFO — if a terminal stays offscreen long enough to
+    // overflow, the user loses the earliest chunks, which is the same
+    // behavior xterm's own scrollback trim would have produced anyway.
+    let isVisible = true;
+    let offscreenBuffer: string[] = [];
+    let offscreenBytes = 0;
+    const OFFSCREEN_CAP_BYTES = 512 * 1024;
+    const MAX_OFFSCREEN_CHUNKS = 4096; // belt-and-suspenders against pathological bursts
+
     const scheduleWrite = () => {
       if (writeScheduled) return;
+      if (!isVisible) return; // skip RAF — chunks are already in offscreenBuffer
       writeScheduled = true;
       requestAnimationFrame(() => {
         if (outputChunks.length) {
@@ -95,6 +118,20 @@ function TerminalNode({ id, data }: CanvasNodeProps<TerminalNodeData>) {
     };
 
     const unsubscribeOutput = sidecar.onTerminalOutput(d.terminalId, (chunk) => {
+      if (!isVisible) {
+        // Track FIFO drop: if appending would overflow the cap, shift the
+        // oldest chunk first. Bounded cost (one shift per overflow).
+        offscreenBuffer.push(chunk);
+        offscreenBytes += chunk.length;
+        while (
+          (offscreenBytes > OFFSCREEN_CAP_BYTES || offscreenBuffer.length > MAX_OFFSCREEN_CHUNKS) &&
+          offscreenBuffer.length > 0
+        ) {
+          const dropped = offscreenBuffer.shift()!;
+          offscreenBytes -= dropped.length;
+        }
+        return;
+      }
       outputChunks.push(chunk);
       scheduleWrite();
 
@@ -137,6 +174,54 @@ function TerminalNode({ id, data }: CanvasNodeProps<TerminalNodeData>) {
     if (rootRef.current) observer.observe(rootRef.current);
     requestAnimationFrame(resize);
 
+    // Offscreen culling: subscribe to the canvas viewport, compute this
+    // terminal's intersection against it, and toggle `isVisible` accordingly.
+    // On transition hidden→visible, replay the offscreen buffer in one big
+    // write() so the terminal catches up to the latest output.
+    //
+    // The subscription is module-level (not gated on Canvas having registered
+    // its imperative API) so we can attach from inside the child useEffect —
+    // React fires child effects before parent effects, so a Canvas-gated
+    // subscribe would miss the initial registration.
+    const recomputeVisibility = (rect: { x: number; y: number; width: number; height: number } | null) => {
+      if (!rect) return;
+      const node = useCanvasStore.getState().flowNodes.find(
+        (n) => n.id === d.terminalId || (n.data as Record<string, unknown> | undefined)?.terminalId === d.terminalId,
+      );
+      const nw = Number(node?.style?.width ?? 540);
+      const nh = Number(node?.style?.height ?? 320);
+      const nx = node?.position.x ?? 0;
+      const ny = node?.position.y ?? 0;
+      // AABB intersection in canvas coordinates.
+      const nextVisible =
+        nx + nw >= rect.x &&
+        ny + nh >= rect.y &&
+        nx <= rect.x + rect.width &&
+        ny <= rect.y + rect.height;
+      if (nextVisible === isVisible) return;
+      isVisible = nextVisible;
+      if (isVisible && offscreenBuffer.length) {
+        // Replay the accumulated chunks in a single write; xterm serializes
+        // writes internally so any chunk that arrives mid-replay gets queued
+        // behind it without extra coordination.
+        terminal.write(offscreenBuffer.join(""));
+        offscreenBuffer = [];
+        offscreenBytes = 0;
+      }
+    };
+    const unsubscribeViewport = subscribeToViewport(recomputeVisibility);
+
+    // Visibility also depends on this node's own position (user drags,
+    // auto-tile moves it). Re-check on any flowNodes change that affects
+    // our row. The selector is intentionally narrow so we don't re-run on
+    // every canvas mutation — only on terminal moves.
+    const unsubscribeFlowNodes = useCanvasStore.subscribe((state, prev) => {
+      if (state.flowNodes === prev.flowNodes) return;
+      // Recompute against the latest known viewport rect (the subscription
+      // already kept `isVisible` in sync on every viewport change).
+      recomputeVisibility(getLatestViewportRect());
+    });
+
     terminalRef.current = terminal;
 
     return () => {
@@ -144,6 +229,8 @@ function TerminalNode({ id, data }: CanvasNodeProps<TerminalNodeData>) {
       if (resizeFrameRef.current != null) cancelAnimationFrame(resizeFrameRef.current);
       if (liveTimerRef.current != null) window.clearTimeout(liveTimerRef.current);
       observer.disconnect();
+      unsubscribeViewport();
+      unsubscribeFlowNodes();
       terminal.dispose();
       terminalRef.current = null;
       resizeFrameRef.current = null;

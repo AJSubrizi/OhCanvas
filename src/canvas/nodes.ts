@@ -2,9 +2,20 @@ import { useCanvasStore } from "../state/store";
 import type { TerminalKind } from "../bridge/protocol";
 import type { CanvasNode } from "./types";
 
-interface CanvasViewportApi {
+export interface CanvasViewportRect {
+  /** Top-left corner of the visible area, in canvas coordinates. */
+  x: number;
+  y: number;
+  /** Visible area size, in canvas coordinates. */
+  width: number;
+  height: number;
+}
+
+export interface CanvasViewportApi {
   screenToCanvas(point: { x: number; y: number }): { x: number; y: number };
   centerOn(point: { x: number; y: number }, zoom?: number): void;
+  /** Current visible rect in canvas coordinates. Recomputed on every pan/zoom/resize. */
+  getViewportRect(): CanvasViewportRect | null;
 }
 
 let viewportApi: CanvasViewportApi | null = null;
@@ -12,6 +23,47 @@ let cascade = 0;
 
 export function setCanvasViewportApi(api: CanvasViewportApi | null) {
   viewportApi = api;
+}
+
+/** Read-only accessor used by nodes that need to query viewport state. */
+export function getCanvasViewportApi(): CanvasViewportApi | null {
+  return viewportApi;
+}
+
+// --- Viewport subscription (module-level, independent of Canvas mounting) ---
+//
+// Used by TerminalNode for offscreen culling. Decoupled from the imperative
+// viewport API above so subscribers can attach before Canvas mounts — React
+// fires child useEffects before parent useEffects, so a TerminalNode mounted
+// as a child of Canvas would otherwise miss the initial registration.
+type ViewportSubscriber = (rect: CanvasViewportRect) => void;
+const viewportSubscribers = new Set<ViewportSubscriber>();
+let latestViewportRect: CanvasViewportRect | null = null;
+
+/**
+ * Subscribe to viewport changes. Fires once immediately with the latest
+ * rect (if Canvas has registered one), then again on every pan/zoom/resize.
+ * Returns an unsubscribe function.
+ */
+export function subscribeToViewport(cb: ViewportSubscriber): () => void {
+  viewportSubscribers.add(cb);
+  if (latestViewportRect) cb(latestViewportRect);
+  return () => { viewportSubscribers.delete(cb); };
+}
+
+/** Called by Canvas on every viewport/size change. */
+export function notifyViewportChange(rect: CanvasViewportRect | null) {
+  latestViewportRect = rect;
+  if (rect) {
+    // Iterate over a snapshot so a subscriber unsubscribing mid-fire doesn't
+    // mutate the live set (would be a JS spec violation but easy to avoid).
+    for (const cb of Array.from(viewportSubscribers)) cb(rect);
+  }
+}
+
+/** Read the latest viewport rect without subscribing. Used by ad-hoc checks. */
+export function getLatestViewportRect(): CanvasViewportRect | null {
+  return latestViewportRect;
 }
 
 let counter = 0;

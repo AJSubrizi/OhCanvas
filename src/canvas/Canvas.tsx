@@ -4,7 +4,7 @@ import ShellNode from "./nodes/ShellNode";
 import NoteNode from "./nodes/NoteNode";
 import ShapeNode from "./nodes/ShapeNode";
 import TextNode from "./nodes/TextNode";
-import { retileTerminalsIfAuto, setCanvasViewportApi } from "./nodes";
+import { notifyViewportChange, retileTerminalsIfAuto, setCanvasViewportApi } from "./nodes";
 import { nodeHeight, nodeWidth, type CanvasNode, type CanvasNodeProps } from "./types";
 import { useCanvasStore } from "../state/store";
 import { sidecar } from "../bridge/sidecar";
@@ -109,9 +109,33 @@ export default function Canvas() {
   }, [size.height, size.width]);
 
   useEffect(() => {
-    setCanvasViewportApi({ screenToCanvas, centerOn });
+    setCanvasViewportApi({
+      screenToCanvas,
+      centerOn,
+      getViewportRect: () => {
+        // Visible area in canvas coordinates: top-left corner = screen (0,0)
+        // → canvas, bottom-right = screen (size.w, size.h) → canvas.
+        const tl = screenToCanvas({ x: 0, y: 0 });
+        const br = screenToCanvas({ x: size.width, y: size.height });
+        return { x: tl.x, y: tl.y, width: br.x - tl.x, height: br.y - tl.y };
+      },
+    });
     return () => setCanvasViewportApi(null);
-  }, [centerOn, screenToCanvas]);
+  }, [centerOn, screenToCanvas, size.height, size.width]);
+
+  // Broadcast the current viewport rect to module-level subscribers
+  // (TerminalNode uses this for offscreen culling). Module-level so that
+  // subscribers can attach before Canvas mounts — React runs child
+  // useEffects before parent useEffects, so a TerminalNode child would
+  // otherwise miss the initial API registration.
+  useEffect(() => {
+    const tl = screenToCanvas({ x: 0, y: 0 });
+    const br = screenToCanvas({ x: size.width, y: size.height });
+    notifyViewportChange({ x: tl.x, y: tl.y, width: br.x - tl.x, height: br.y - tl.y });
+    // screenToCanvas is stable (deps on refs only); intentionally omitted
+    // from the dep array to avoid re-firing on every parent re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewport, size.width, size.height]);
 
   useEffect(() => {
     const element = containerRef.current;
