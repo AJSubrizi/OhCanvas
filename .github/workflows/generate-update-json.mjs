@@ -43,6 +43,22 @@ for (const file of files) {
     });
     console.log(`Added Windows platform: windows-x86_64`);
   }
+  // Linux: .AppImage.tar.gz is the updater archive, .AppImage.tar.gz.sig is its signature.
+  // After flatten: OhCanvas_0.1.0_amd64.AppImage.tar.gz
+  if (file.endsWith(".AppImage.tar.gz") && !file.endsWith(".sig")) {
+    const sigFile = `${file}.sig`;
+    if (!existsSync(resolve(distDir, sigFile))) {
+      console.log(`WARN: missing signature file ${sigFile}, skipping ${file}`);
+      continue;
+    }
+    const sig = readFileSync(resolve(distDir, sigFile), "utf-8").trim();
+    platforms.push({
+      url: `https://github.com/AJSubrizi/OhCanvas/releases/latest/download/${file}`,
+      signature: sig,
+      platform: "linux-x86_64",
+    });
+    console.log(`Added Linux platform: linux-x86_64`);
+  }
 }
 
 if (platforms.length === 0) {
