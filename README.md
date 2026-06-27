@@ -137,8 +137,8 @@ Initial working release. Upcoming roadmap:
 - [x] Media player (Spotify, YouTube Music, Apple Music)
 - [x] Canvas control from CLI agent
 - [x] Annotation selection and editing (post-commit) — select tool, delete via `Del`/`Backspace`/toolbar button, recolor, double-click text to edit
-- [ ] Performance with 10+ terminals
-- [ ] File-based persistence (instead of localStorage)
+- [x] Performance with 10+ terminals — RAF-coalesced auto-tile, xterm scrollback 8000→3000, offscreen xterm-write culling via canvas viewport rect
+- [x] File-based persistence (instead of localStorage) — `<app_data_dir>/state/<key>.json` via Tauri commands with atomic writes + localStorage migration on first read
 - [ ] Sidecar bundled as Tauri binary
 - [ ] Windows / Linux builds
 
