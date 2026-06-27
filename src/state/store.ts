@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { CanvasNode } from "../canvas/types";
 import type { AgentCommand, TerminalKind } from "../bridge/protocol";
 import { BACKGROUND_VIDEOS, DEFAULT_BACKGROUND_VIDEO } from "../ui/backgrounds";
+import { persistence } from "./persistence";
 
 export type CanvasTool =
   | "select"
@@ -91,9 +92,14 @@ export interface Workspace {
   color: string;
 }
 
-const CANVAS_STORAGE_KEY = 'ohcanvas:v1';
+// Disk-side keys. The persistence adapter prefixes these with "ohcanvas:"
+// before writing to localStorage fallback / to <app_data_dir>/state/.
+// Files keep the same shape as the old localStorage entries so a v1 user
+// upgrading to the file backend reads existing data without a manual
+// migration step (the adapter handles it on first read).
+const CANVAS_STORAGE_KEY = 'v1';
 
-const workspaceStorageKey = (wsId: string) => `${CANVAS_STORAGE_KEY}:${wsId}`;
+const workspaceKey = (wsId: string) => `${CANVAS_STORAGE_KEY}:${wsId}`;
 
 const DEFAULT_SPOTIFY_EMBED_URL =
   "https://open.spotify.com/embed/playlist/37i9dQZF1DWZeKCadgRdKQ?utm_source=generator&theme=0";
@@ -158,7 +164,7 @@ interface CanvasStore {
   setVoiceStatus: (state: string, message?: string) => void;
   setLastCanvasAction: (action: string | null) => void;
   // Workspace actions
-  loadWorkspaceState: (wsId: string) => void;
+  loadWorkspaceState: (wsId: string) => Promise<void>;
   // Preview dock
   setPreviewOpen: (open: boolean) => void;
   setPreviewUrl: (url: string) => void;
@@ -205,7 +211,7 @@ interface CanvasStore {
 
   // Persistence
   saveCanvas: () => void;
-  loadCanvas: () => void;
+  loadCanvas: () => Promise<void>;
   clearCanvas: () => void;
 }
 
@@ -269,10 +275,15 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
   setLastCanvasAction: (action: string | null) => set({ lastCanvasAction: action }),
 
   // --- Workspace actions ---
-  loadWorkspaceState: (wsId: string) => {
+  loadWorkspaceState: async (wsId: string) => {
+    let raw: string | null = null;
     try {
-      const raw = localStorage.getItem(workspaceStorageKey(wsId));
-      if (!raw) return;
+      raw = await persistence().read(workspaceKey(wsId));
+    } catch (e) {
+      console.warn(`[canvas] read workspace ${wsId} failed`, e);
+    }
+    if (!raw) return;
+    try {
       const data = JSON.parse(raw);
       if (!data?.nodes) return;
       const restoredNodes = (data.nodes as CanvasNode[])
@@ -330,7 +341,7 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
         preview: { open: s.previewOpen, url: s.previewUrl, terminalId: s.previewTerminalId, device: s.previewDevice },
         terminals: s.terminals,
       };
-      try { localStorage.setItem(workspaceStorageKey(s.activeWorkspaceId), JSON.stringify(snapshot)); } catch {}
+      persistence().write(workspaceKey(s.activeWorkspaceId), JSON.stringify(snapshot));
       const nextIdx = s.workspaces.length + 1;
       const color = WORKSPACE_COLORS[(nextIdx - 1) % WORKSPACE_COLORS.length];
       const newWs: Workspace = { id: `ws-${nextIdx}`, label: String(nextIdx), color };
@@ -348,11 +359,15 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
       if (s.workspaces.length <= 1) return s;
       const remaining = s.workspaces.filter((ws) => ws.id !== id);
       const wasActive = s.activeWorkspaceId === id;
-      localStorage.removeItem(workspaceStorageKey(id));
+      persistence().remove(workspaceKey(id));
       const nextActiveId = wasActive ? remaining[remaining.length - 1].id : s.activeWorkspaceId;
       // If removing the active workspace, load the next one
       if (wasActive) {
-        setTimeout(() => { useCanvasStore.getState().loadWorkspaceState(nextActiveId); }, 0);
+        setTimeout(() => {
+          useCanvasStore.getState().loadWorkspaceState(nextActiveId).catch((e) => {
+            console.warn(`[canvas] reload after remove failed`, e);
+          });
+        }, 0);
       }
       return { workspaces: remaining, activeWorkspaceId: nextActiveId };
     }),
@@ -382,13 +397,15 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
         terminals: s.terminals,
       };
       try {
-        localStorage.setItem(workspaceStorageKey(s.activeWorkspaceId), JSON.stringify(snapshot));
+        persistence().write(workspaceKey(s.activeWorkspaceId), JSON.stringify(snapshot));
       } catch (e) {
         console.warn("[canvas] save workspace state failed", e);
       }
       // Load the new workspace state after the set completes
       setTimeout(() => {
-        useCanvasStore.getState().loadWorkspaceState(id);
+        useCanvasStore.getState().loadWorkspaceState(id).catch((e) => {
+          console.warn(`[canvas] switch load failed`, e);
+        });
       }, 0);
       return { activeWorkspaceId: id };
     }),
@@ -592,24 +609,30 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
         // buffer to xterm — so there is nothing to serialize here.
         terminals: state.terminals,
       };
-      localStorage.setItem(CANVAS_STORAGE_KEY, JSON.stringify(snapshot));
-      // Also save to workspace-specific key
+      const payload = JSON.stringify(snapshot);
+      // Write both the global (legacy-compatible) and workspace-scoped copies.
+      // The adapter coalesces overlapping writes so a burst of saves only
+      // hits disk with the latest snapshot per key.
+      persistence().write(CANVAS_STORAGE_KEY, payload);
       try {
-        localStorage.setItem(workspaceStorageKey(state.activeWorkspaceId), JSON.stringify(snapshot));
-      } catch {}
+        persistence().write(workspaceKey(state.activeWorkspaceId), payload);
+      } catch (e) {
+        console.warn("[canvas] save failed", e);
+      }
     } catch (e) {
       console.warn("[canvas] save failed", e);
     }
   },
 
-  loadCanvas: () => {
+  loadCanvas: async () => {
     try {
-      // Try loading from active workspace first, fall back to global
+      // Try loading from active workspace first, fall back to global.
+      // The adapter also handles the localStorage→file migration on first
+      // read: any old ohcanvas:v1* keys still in localStorage get mirrored
+      // to disk and removed, so legacy users don't lose their canvas.
       const activeId = useCanvasStore.getState().activeWorkspaceId || "ws-1";
-      let raw = localStorage.getItem(workspaceStorageKey(activeId));
-      if (!raw) {
-        raw = localStorage.getItem(CANVAS_STORAGE_KEY);
-      }
+      let raw = await persistence().read(workspaceKey(activeId));
+      if (!raw) raw = await persistence().read(CANVAS_STORAGE_KEY);
       if (!raw) return;
       const data = JSON.parse(raw) as any;
       if (!data?.nodes) return;
@@ -688,10 +711,8 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
 
   clearCanvas: () => {
     const activeId = useCanvasStore.getState().activeWorkspaceId;
-    try {
-      localStorage.removeItem(CANVAS_STORAGE_KEY);
-      if (activeId) localStorage.removeItem(workspaceStorageKey(activeId));
-    } catch {}
+    persistence().remove(CANVAS_STORAGE_KEY);
+    if (activeId) persistence().remove(workspaceKey(activeId));
     // Keep current background when clearing (don't reset to default)
     set({
       flowNodes: [],

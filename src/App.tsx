@@ -45,8 +45,12 @@ export default function App() {
     // delayed by the (~105 MB) download.
     void ensureLlmModel();
 
-    // Restore previous canvas (positions + static nodes)
-    useCanvasStore.getState().loadCanvas();
+    // Restore previous canvas (positions + static nodes). Async because
+    // the persistence layer may read from disk (<app_data_dir>/state/...).
+    useCanvasStore
+      .getState()
+      .loadCanvas()
+      .catch((e) => console.warn("[canvas] initial load failed", e));
 
     // Auto-save layout/settings promptly, but debounce noisy drag/resize updates
     // and ignore terminal output churn.
