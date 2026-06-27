@@ -19,22 +19,34 @@ export function useAnnotations({ initial = [], onSend }: UseAnnotationsOptions =
   const [editing, setEditing] = useState(false);
   const [activeAnnotation, setActiveAnnotation] = useState<Annotation | null>(null);
   const [pendingText, setPendingText] = useState<AnnotationEditor["pendingText"]>(null);
-  const [selectedTextIndex, setSelectedTextIndex] = useState<number | null>(null);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
   const add = useCallback((ann: Annotation) => {
     setAnnotations((prev) => [...prev, ann]);
     setPendingText(null);
-    setSelectedTextIndex(null);
+    setSelectedIndex(null);
   }, []);
 
   const update = useCallback((updater: (prev: Annotation[]) => Annotation[]) => {
     setAnnotations(updater);
   }, []);
 
+  const removeAt = useCallback((index: number) => {
+    setAnnotations((prev) => prev.filter((_, i) => i !== index));
+    setSelectedIndex(null);
+  }, []);
+
+  const updateAnnotation = useCallback(
+    (index: number, updater: (ann: Annotation) => Annotation) => {
+      setAnnotations((prev) => prev.map((ann, i) => (i === index ? updater(ann) : ann)));
+    },
+    [],
+  );
+
   const clear = useCallback(() => {
     setAnnotations([]);
     setPendingText(null);
-    setSelectedTextIndex(null);
+    setSelectedIndex(null);
     setActiveAnnotation(null);
     setTool(null);
   }, []);
@@ -46,7 +58,7 @@ export function useAnnotations({ initial = [], onSend }: UseAnnotationsOptions =
         setTool(null);
         setPendingText(null);
         setActiveAnnotation(null);
-        setSelectedTextIndex(null);
+        setSelectedIndex(null);
       }
       return next;
     });
@@ -68,15 +80,17 @@ export function useAnnotations({ initial = [], onSend }: UseAnnotationsOptions =
     editing,
     activeAnnotation,
     pendingText,
-    selectedTextIndex,
+    selectedIndex,
     setColor,
     setTool,
     setEditing,
     setPendingText,
-    setSelectedTextIndex,
+    setSelectedIndex,
     setActiveAnnotation,
     add,
     update,
+    removeAt,
+    updateAnnotation,
     clear,
     toggleEditing,
   };

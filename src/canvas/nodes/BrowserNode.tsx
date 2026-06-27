@@ -204,9 +204,17 @@ function BrowserNode({ id, data }: CanvasNodeProps<BrowserNodeData>) {
       {editor.editing && (
         <div className="browser-card__edit-tools nodrag" aria-label="Preview annotation tools">
           <button
+            className={editor.tool === "select" ? "is-active" : ""}
+            onClick={() => editor.setTool(editor.tool === "select" ? null : "select")}
+            title="Select / move (V)"
+            aria-label="Select tool"
+          >
+            ⤧
+          </button>
+          <button
             className={editor.tool === "text" ? "is-active" : ""}
             onClick={() => editor.setTool(editor.tool === "text" ? null : "text")}
-            title="Text"
+            title="Text (T)"
             aria-label="Text tool"
           >
             T
@@ -214,7 +222,7 @@ function BrowserNode({ id, data }: CanvasNodeProps<BrowserNodeData>) {
           <button
             className={editor.tool === "arrow" ? "is-active" : ""}
             onClick={() => editor.setTool(editor.tool === "arrow" ? null : "arrow")}
-            title="Arrow"
+            title="Arrow (A)"
             aria-label="Arrow tool"
           >
             ↗
@@ -222,30 +230,62 @@ function BrowserNode({ id, data }: CanvasNodeProps<BrowserNodeData>) {
           <button
             className={editor.tool === "pen" ? "is-active" : ""}
             onClick={() => editor.setTool(editor.tool === "pen" ? null : "pen")}
-            title="Freehand"
+            title="Freehand (P)"
             aria-label="Freehand pencil tool"
           >
             ✎
           </button>
           <span className="browser-card__tool-sep" />
-          {COLORS.map((color) => (
-            <button
-              key={color}
-              className={`browser-card__swatch ${editor.color === color ? "is-active" : ""}`}
-              onClick={() => editor.setColor(color)}
-              title={color}
-              aria-label={`Color ${color}`}
-              style={{ backgroundColor: color }}
-            />
-          ))}
+          {COLORS.map((color) => {
+            const selected = editor.selectedIndex !== null
+              ? editor.annotations[editor.selectedIndex]?.color === color
+              : editor.color === color;
+            return (
+              <button
+                key={color}
+                className={`browser-card__swatch ${selected ? "is-active" : ""}`}
+                onClick={() => {
+                  if (editor.selectedIndex !== null) {
+                    editor.updateAnnotation(editor.selectedIndex, (ann) => ({ ...ann, color }));
+                  } else {
+                    editor.setColor(color);
+                  }
+                }}
+                title={editor.selectedIndex !== null ? `Recolor selection → ${color}` : color}
+                aria-label={`Color ${color}`}
+                style={{ backgroundColor: color }}
+              />
+            );
+          })}
           <input
             type="color"
-            value={editor.color}
-            onChange={(event) => editor.setColor(event.target.value)}
+            value={
+              editor.selectedIndex !== null
+                ? (editor.annotations[editor.selectedIndex]?.color ?? editor.color)
+                : editor.color
+            }
+            onChange={(event) => {
+              if (editor.selectedIndex !== null) {
+                editor.updateAnnotation(editor.selectedIndex, (ann) => ({ ...ann, color: event.target.value }));
+              } else {
+                editor.setColor(event.target.value);
+              }
+            }}
             title="Custom color"
             aria-label="Custom annotation color"
           />
           <span className="browser-card__tool-sep" />
+          {editor.selectedIndex !== null && (
+            <button
+              onClick={() => {
+                if (editor.selectedIndex !== null) editor.removeAt(editor.selectedIndex);
+              }}
+              title="Delete selected (Del)"
+              aria-label="Delete selected annotation"
+            >
+              ⌫
+            </button>
+          )}
           <button
             onClick={editor.clear}
             disabled={editor.annotations.length === 0}

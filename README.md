@@ -136,11 +136,11 @@ Initial working release. Upcoming roadmap:
 - [x] Multiple workspaces
 - [x] Media player (Spotify, YouTube Music, Apple Music)
 - [x] Canvas control from CLI agent
+- [x] Annotation selection and editing (post-commit) — select tool, delete via `Del`/`Backspace`/toolbar button, recolor, double-click text to edit
 - [ ] Performance with 10+ terminals
 - [ ] File-based persistence (instead of localStorage)
 - [ ] Sidecar bundled as Tauri binary
 - [ ] Windows / Linux builds
-- [ ] Annotation selection and editing (post-commit)
 
 ---
 
