@@ -9,6 +9,12 @@ src-tauri/target/
 src-tauri/gen/
 src-tauri/tauri-plugin-llm/target/
 
+# sidecar binary (built per-platform via `pnpm --filter sidecar build`;
+# see .github/workflows/release.yml for the CI version). Tauri refuses to
+# build if the externalBin entry is missing, so each dev/CI run must
+# produce its own copy of the right triple before `tauri build`.
+src-tauri/binaries/ohcanvas-sidecar-*
+
 # generated attachments
 .ohcanvas/attachments/
 

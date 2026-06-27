@@ -4,6 +4,7 @@
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
@@ -134,6 +135,60 @@ fn remove_state(app: AppHandle, name: String) -> CmdResult<()> {
     }
 }
 
+/// Spawn the sidecar Node.js process so the React app can connect to
+/// ws://127.0.0.1:8787 without an out-of-band launcher.
+///
+/// In release builds the binary is bundled by Tauri at
+/// `<resource_dir>/ohcanvas-sidecar[.exe]` and we spawn it directly.
+/// In dev (`cargo tauri dev`) the bundled resource doesn't exist, so we
+/// fall back to `pnpm --filter sidecar start` which the React WebSocket
+/// client will reach once it boots.
+///
+/// Fire-and-forget: we don't block the Tauri setup on the child, and we
+/// don't capture stdout/stderr to avoid backpressure deadlocks if the
+/// sidecar ever hangs. On Tauri exit the child inherits SIGTERM via the
+/// process group; a forced kill (SIGKILL) on Tauri may orphan it — that's
+/// the same behavior as `pnpm dev` today, where Ctrl-C kills both.
+fn spawn_sidecar(app: &AppHandle) -> CmdResult<()> {
+    let bin_name = if cfg!(windows) { "ohcanvas-sidecar.exe" } else { "ohcanvas-sidecar" };
+
+    // Production path: look for the bundled binary alongside the app.
+    if let Ok(bundled) = app.path().resolve(bin_name, tauri::path::BaseDirectory::Resource) {
+        if bundled.exists() {
+            Command::new(&bundled)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .map_err(|e| PersistenceError {
+                    message: format!("spawn bundled sidecar {bundled:?}: {e}"),
+                })?;
+            return Ok(());
+        }
+    }
+
+    // Dev path: no bundled binary, assume `pnpm dev` style workflow.
+    // Walk up from CARGO_MANIFEST_DIR (src-tauri/) to find the workspace
+    // root containing pnpm-workspace.yaml.
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+        .map_err(|e| PersistenceError { message: format!("CARGO_MANIFEST_DIR: {e}") })?;
+    let workspace_root = PathBuf::from(&manifest_dir)
+        .parent()
+        .ok_or_else(|| PersistenceError { message: "no workspace root".into() })?
+        .to_path_buf();
+    Command::new("pnpm")
+        .args(["--filter", "sidecar", "start"])
+        .current_dir(&workspace_root)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| PersistenceError {
+            message: format!("spawn dev sidecar (pnpm --filter sidecar start): {e}"),
+        })?;
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -142,6 +197,18 @@ fn main() {
         .plugin(tauri_plugin_stt::init())
         .plugin(tauri_plugin_llm::init())
         .invoke_handler(tauri::generate_handler![read_state, write_state, remove_state])
+        .setup(|app| {
+            // Fire-and-forget: spawn the sidecar asynchronously so we
+            // don't block app setup. Failures are logged to stderr; the
+            // React app will surface "sidecar disconnected" in the UI.
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = spawn_sidecar(&handle) {
+                    eprintln!("[ohcanvas] failed to spawn sidecar: {}", e.message);
+                }
+            });
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running Canvas");
 }

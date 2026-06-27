@@ -75,6 +75,53 @@ jobs:
       - name: Install deps
         run: pnpm install
 
+      # Build the sidecar Node.js binary per target triple and drop it where
+      # Tauri's externalBin resolver expects it. Tauri's build script errors
+      # out hard if the binary is missing, so this must run before `tauri build`.
+      # @lydell/node-pty ships native prebuilds as platform-specific packages
+      # in optionalDependencies; `bun build --compile` doesn't follow those
+      # by default, so we install them as direct deps for the build only.
+      # Cross-platform binary naming matches Tauri's externalBin convention:
+      #   ohcanvas-sidecar-<target-triple>[.exe]
+      - name: Install Bun
+        if: runner.os != 'Windows'
+        run: npm install -g bun
+      - name: Install Bun (Windows)
+        if: runner.os == 'Windows'
+        run: npm install -g bun
+        shell: pwsh
+
+      - name: Install node-pty platform package
+        run: |
+          case "${{ matrix.target }}" in
+            aarch64-apple-darwin)  pkg="@lydell/node-pty-darwin-arm64" ;;
+            x86_64-apple-darwin)   pkg="@lydell/node-pty-darwin-x64" ;;
+            x86_64-pc-windows-msvc) pkg="@lydell/node-pty-win32-x64" ;;
+            x86_64-unknown-linux-gnu) pkg="@lydell/node-pty-linux-x64" ;;
+          esac
+          cd sidecar
+          pnpm add "$pkg"
+
+      - name: Build sidecar binary
+        run: |
+          mkdir -p ../src-tauri/binaries
+          triple="${{ matrix.target }}"
+          ext=""
+          [ "${{ matrix.os }}" = "windows-2022" ] && ext=".exe"
+          [ "${{ matrix.os }}" = "windows-latest" ] && ext=".exe"
+          bun_arch=$(echo "$triple" | sed 's/.*-//; s/x86_64/x64/; s/aarch64/arm64/')
+          bun_os=$(echo "$triple" | sed 's/-.*//')
+          # macOS target triple starts with "apple" but bun uses "darwin"
+          case "$triple" in
+            *-apple-darwin) bun_os="darwin" ;;
+            *-pc-windows-msvc) bun_os="windows" ;;
+            *-unknown-linux-gnu) bun_os="linux" ;;
+          esac
+          cd sidecar
+          bun build --compile --target="bun-${bun_arch}-${bun_os}" \
+            --outfile="../src-tauri/binaries/ohcanvas-sidecar-${triple}${ext}" \
+            src/index.ts
+
       - name: Build
         run: pnpm tauri build --bundles ${{ matrix.bundles }} --target ${{ matrix.target }}
         env:
