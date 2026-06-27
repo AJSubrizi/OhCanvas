@@ -60,8 +60,13 @@ class FileAdapter implements PersistenceAdapter {
       // First-time migration: try localStorage once, then mirror to disk.
       const fromLs = readLocalStorage(key);
       if (fromLs != null) {
-        // Fire-and-forget; never block the caller on the copy.
-        this.write(key, fromLs);
+        // AWAIT the disk write so we don't wipe localStorage before the
+        // file is durably on disk. If the app force-closes between
+        // `write()` and the underlying flush, the localStorage copy is
+        // already gone and the next launch sees neither — silent data
+        // loss. With the await, either both copies exist briefly (no
+        // loss) or the migration finishes cleanly.
+        await this.write(key, fromLs);
         try { removeLocalStorage(key); } catch { /* ignore */ }
         return fromLs;
       }
@@ -72,21 +77,31 @@ class FileAdapter implements PersistenceAdapter {
     }
   }
 
-  write(key: string, value: string): void {
+  async write(key: string, value: string): Promise<void> {
     const existing = this.writes.get(key);
     if (existing) {
       // Latest snapshot wins — drop any intermediate value queued by a
       // previous save call.
       existing.pending = value;
-      return;
+      return existing.promise;
     }
     const slot: InFlightWrite = { promise: Promise.resolve(), pending: null };
     this.writes.set(key, slot);
-    slot.promise = this.flush(key, value, slot).finally(() => {
-      // Only clear the slot if no newer write superseded us.
+    // Return a promise that resolves when this write (or its pending
+    // successor) reaches a stable end state — file on disk, OR a logged
+    // flush failure. Fire-and-forget callers (saveCanvas etc.) ignore
+    // the return value and stay simple; awaiters (migration) get a
+    // guarantee that the write attempt finished before they clean up
+    // the source.
+    slot.promise = (async () => {
+      try { await this.flush(key, value, slot); }
+      catch { /* flush already logged internally */ }
+    })();
+    slot.promise.finally(() => {
       const current = this.writes.get(key);
       if (current === slot) this.writes.delete(key);
     });
+    return slot.promise;
   }
 
   private async flush(key: string, value: string, slot: InFlightWrite): Promise<void> {

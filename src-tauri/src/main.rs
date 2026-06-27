@@ -80,25 +80,47 @@ fn write_state(app: AppHandle, name: String, content: String) -> CmdResult<()> {
         fs::create_dir_all(parent)?;
     }
     // Atomic write: write to a sibling temp file, fsync, then rename over the
-    // target. Rename is atomic on POSIX and replace_file on Windows gives us
-    // the same guarantee. This way a crash mid-write never corrupts an
-    // existing snapshot — the previous one stays intact.
-    let tmp = path.with_extension("json.tmp");
+    // target. Rename is atomic on POSIX and the Windows fallback below
+    // gives us the same effect. This way a crash mid-write never corrupts
+    // an existing snapshot — the previous one stays intact.
+    //
+    // Append ".tmp" manually instead of with_extension("json.tmp") — the
+    // latter would strip the real ".json" extension, which happens to be
+    // safe today only because every key ends in ".json".
+    let mut tmp = path.clone().into_os_string();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
     {
         let mut f = fs::File::create(&tmp)?;
         f.write_all(content.as_bytes())?;
         f.sync_all()?;
     }
-    // On Windows, rename fails if target exists — use the atomic-rename helper.
+    // On Windows, std::fs::rename does NOT use MOVEFILE_REPLACE_EXISTING —
+    // it errors out if the target already exists. The fallback below
+    // (delete + rename) is the standard Rust workaround but exposes a
+    // small "file missing" window to concurrent readers. For a single-
+    // writer desktop app this is acceptable; if we ever add multi-writer
+    // concurrency, switch to `MoveFileExW` with MOVEFILE_REPLACE_EXISTING
+    // via the windows-sys crate.
     #[cfg(windows)]
     fs::rename(&tmp, &path).or_else(|_| {
-        // Fall back to remove + rename if rename refused (shouldn't happen
-        // because we used File::create which truncates, but be defensive).
         let _ = fs::remove_file(&path);
         fs::rename(&tmp, &path)
     })?;
     #[cfg(not(windows))]
     fs::rename(&tmp, &path)?;
+
+    // POSIX durability: after rename, flush the parent directory entry so
+    // the rename itself survives a crash. Without this, sudden power loss
+    // can roll back the rename and resurrect the previous snapshot —
+    // defeating the whole atomic-write scheme. No-op on Windows (the
+    // directory entry is committed with the file write there).
+    #[cfg(not(windows))]
+    if let Some(parent) = path.parent() {
+        if let Ok(dir) = fs::File::open(parent) {
+            let _ = dir.sync_all();
+        }
+    }
     Ok(())
 }
 
