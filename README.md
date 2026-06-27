@@ -139,8 +139,9 @@ Initial working release. Upcoming roadmap:
 - [x] Annotation selection and editing (post-commit) — select tool, delete via `Del`/`Backspace`/toolbar button, recolor, double-click text to edit
 - [x] Performance with 10+ terminals — RAF-coalesced auto-tile, xterm scrollback 8000→3000, offscreen xterm-write culling via canvas viewport rect
 - [x] File-based persistence (instead of localStorage) — `<app_data_dir>/state/<key>.json` via Tauri commands with atomic writes + localStorage migration on first read
-- [ ] Sidecar bundled as Tauri binary
-- [ ] Windows / Linux builds
+- [x] Linux x86_64 build in CI (Tauri 2 webview deps + cmake/clang for llama.cpp + whisper.cpp)
+- [x] Sidecar bundled as Tauri binary — Rust spawns `<resource_dir>/ohcanvas-sidecar[.exe]` (falls back to `pnpm --filter sidecar start` in dev); CI builds it per platform via `bun build --compile`. **Known follow-up:** Bun compile doesn't follow @lydell/node-pty's optionalDependencies for the platform-specific prebuild — first CI run will surface whether the direct-dep install in the workflow fixes it; if not, switch to Node SEA or `@yao-pkg/pkg`.
+- [ ] macOS sidecar signing/notarization (Gatekeeper)
 
 ---
 
