@@ -11,8 +11,8 @@ OhCanvas is an open-source desktop app — an infinite whiteboard where you spaw
 ```bash
 # Prerequisites: Node 20+, pnpm 9+, Rust 1.77+, Xcode CLI Tools (macOS)
 
-git clone https://github.com/subrizi/ohcanvas.git
-cd ohcanvas
+git clone https://github.com/AJSubrizi/OhCanvas.git
+cd OhCanvas
 pnpm install
 
 # Development (sidecar + Tauri window)
@@ -55,10 +55,10 @@ ohcanvas/
 │   ├── ui/
 │   │   ├── Navbar.tsx            # Toolbar + workspace switcher
 │   │   ├── CommandBar.tsx        # Command bar (text + voice)
-│   │   ├── PreviewDock.tsx       # Live preview panel
+│   │   ├── PreviewDock.tsx       # Live preview panel + screenshot send-to-terminal
 │   │   ├── backgrounds.tsx       # Animated backgrounds
 │   │   ├── themes.ts             # Color themes
-│   │   ├── media.tsx             # Spotify/YouTube/Apple Music player
+│   │   ├── SpotifyPlayer.tsx     # Spotify/YouTube/Apple Music embed player
 │   │   └── voice.ts              # Whisper voice recognition
 │   └── bridge/
 │       ├── protocol.ts           # WebSocket message types
@@ -72,6 +72,8 @@ ohcanvas/
 │
 ├── src-tauri/                    # Tauri shell (Rust)
 │   ├── main.rs
+│   ├── Info.plist                # macOS microphone privacy description
+│   ├── binaries/                 # Built sidecar binaries for Tauri externalBin
 │   ├── tauri-plugin-llm/         # Custom LLM plugin (SmolLM2)
 │   └── tauri.conf.json
 │
@@ -120,6 +122,7 @@ OHCANVAS {"action":"focus_terminal"}
 | **Backend** | Node.js sidecar (WebSocket) |
 | **Voice** | Whisper (native Tauri plugin) |
 | **Local LLM** | SmolLM2 (custom Tauri plugin) |
+| **Persistence** | Tauri file-backed state in `<app_data_dir>/state` with localStorage fallback |
 
 ---
 
@@ -140,7 +143,8 @@ Initial working release. Upcoming roadmap:
 - [x] Performance with 10+ terminals — RAF-coalesced auto-tile, xterm scrollback 8000→3000, offscreen xterm-write culling via canvas viewport rect
 - [x] File-based persistence (instead of localStorage) — `<app_data_dir>/state/<key>.json` via Tauri commands with atomic writes + localStorage migration on first read
 - [x] Linux x86_64 build in CI (Tauri 2 webview deps + cmake/clang for llama.cpp + whisper.cpp)
-- [x] Sidecar bundled as Tauri binary — Rust spawns `<resource_dir>/ohcanvas-sidecar[.exe]` (falls back to `pnpm --filter sidecar start` in dev); CI builds it per platform via `bun build --compile`. **Known follow-up:** Bun compile doesn't follow @lydell/node-pty's optionalDependencies for the platform-specific prebuild — first CI run will surface whether the direct-dep install in the workflow fixes it; if not, switch to Node SEA or `@yao-pkg/pkg`.
+- [x] Sidecar bundled as Tauri binary — Rust spawns `<resource_dir>/ohcanvas-sidecar[.exe]` (falls back to `pnpm --filter sidecar start` in dev); CI builds it per platform via `bun build --compile` and installs the matching `@lydell/node-pty-*` prebuild package for each target.
+- [x] Auto-update artifacts in release builds (`latest-release.json` generated from uploaded bundles)
 - [ ] macOS sidecar signing/notarization (Gatekeeper)
 
 ---
