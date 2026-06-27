@@ -124,9 +124,23 @@ class FileAdapter implements PersistenceAdapter {
   }
 
   remove(key: string): void {
-    void invoke<void>("remove_state", { name: lsKey(key) })
-      .then(() => { try { removeLocalStorage(key); } catch { /* ignore */ } })
-      .catch((e) => console.warn(`[persistence] file remove failed for ${key}`, e));
+    // Wait for any in-flight write for this key to finish before issuing
+    // the remove. Otherwise a save queued just before clearCanvas could
+    // land on disk after the remove and resurrect the snapshot. Same for
+    // removeWorkspace. Fire-and-forget at the call site — internally we
+    // chain on the in-flight promise so order is preserved.
+    const inFlight = this.writes.get(key)?.promise;
+    const cleanup = () => {
+      void invoke<void>("remove_state", { name: lsKey(key) })
+        .then(() => { try { removeLocalStorage(key); } catch { /* ignore */ } })
+        .catch((e) => console.warn(`[persistence] file remove failed for ${key}`, e));
+    };
+    if (inFlight) {
+      // Swallow any rejection — flush already logged the root cause.
+      void inFlight.catch(() => {}).then(cleanup);
+    } else {
+      cleanup();
+    }
   }
 }
 
