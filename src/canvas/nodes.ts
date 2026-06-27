@@ -116,12 +116,28 @@ export function spawnTerminalNode(args: {
 /** Node types that participate in auto-tiling (the "window-like" cards). */
 const TILE_TYPES = new Set(["terminal", "shell", "browser"]);
 
+// Coalesce repeated retile requests within a single frame into one pass.
+// Spawning N terminals back-to-back triggers N tile recomputations even though
+// each one is idempotent over the latest flowNodes — coalescing saves N-1
+// flowNodes store updates (which cascade through Canvas re-renders, the
+// debounced persistence signature, and per-frame React reconciliation).
+let pendingRetileFrame: number | null = null;
+
 /** Re-tile after an open/close when auto-arrange is on and there are 2+ tiles. */
 export function retileTerminalsIfAuto() {
   const store = useCanvasStore.getState();
   if (!store.autoArrange) return;
   const count = store.flowNodes.filter((n) => TILE_TYPES.has(n.type ?? "")).length;
-  if (count >= 2) tileTerminals();
+  if (count < 2) return;
+  if (typeof requestAnimationFrame === "undefined") {
+    tileTerminals();
+    return;
+  }
+  if (pendingRetileFrame != null) return;
+  pendingRetileFrame = requestAnimationFrame(() => {
+    pendingRetileFrame = null;
+    tileTerminals();
+  });
 }
 
 /**
