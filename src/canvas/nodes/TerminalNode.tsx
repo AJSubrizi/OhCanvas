@@ -48,7 +48,11 @@ function TerminalNode({ id, data }: CanvasNodeProps<TerminalNodeData>) {
       allowTransparency: true, // let the frosted card show through (CNVS-style window)
       cursorBlink: true,
       convertEol: false,
-      scrollback: 8000,
+      // 3000 lines is plenty for "scroll back to read the last build error"
+      // or copy a recent command. xterm.js default is 1000; the old 8000
+      // (~1 MB per terminal at ~120 B/line) cost ~6 MB of RAM with 10
+      // terminals open — most users never scrolled that far back anyway.
+      scrollback: 3000,
       fontFamily: 'ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace',
       fontSize: 12,
       lineHeight: 1.22,
