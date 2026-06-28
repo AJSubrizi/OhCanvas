@@ -16,7 +16,7 @@ import {
   wrapSmolLm2Chat,
   type CanvasActionDeps,
 } from "./conductor-action.ts";
-import { parseCanvasActionLine } from "./canvas-actions.ts";
+import { parseCanvasActionLine, type CanvasCliAction } from "./canvas-actions.ts";
 
 type AgentHandle = { runner: ExternalRunner };
 
@@ -31,6 +31,10 @@ interface PendingConductor {
   cwd: string;
 }
 
+function ensureTerminalSubmit(input: string): string {
+  return /[\r\n]$/.test(input) ? input : `${input}\r`;
+}
+
 /**
  * Hosts CLI agents (legacy one-shot cards) and PTY-backed terminal sessions.
  */
@@ -43,7 +47,9 @@ export class Orchestrator {
   private pendingConductor = new Map<string, PendingConductor>();
 
   constructor(private send: (msg: ServerMsg) => void) {
-    this.terminals = new TerminalManager(send);
+    this.terminals = new TerminalManager(send, (sourceTerminalId, action) =>
+      this.runTerminalCanvasAction(sourceTerminalId, action),
+    );
     this.stt = new SttManager(send);
   }
 
@@ -55,7 +61,7 @@ export class Orchestrator {
       runShell: (command, requestedCwd) =>
         this.terminals.start({ kind: "shell", command, cwd: requestedCwd ?? cwd }),
       killTerminal: (terminalId) => this.terminals.kill(terminalId),
-      writeTerminal: (terminalId, input) => this.terminals.write(terminalId, `${input}\r`),
+      writeTerminal: (terminalId, input) => this.terminals.write(terminalId, ensureTerminalSubmit(input)),
     };
   }
 
@@ -67,8 +73,13 @@ export class Orchestrator {
       runShell: (command, requestedCwd) =>
         this.terminals.start({ kind: "shell", command, cwd: requestedCwd ?? cwd }),
       killTerminal: (terminalId) => this.terminals.kill(terminalId),
-      writeTerminal: (terminalId, input) => this.terminals.write(terminalId, `${input}\r`),
+      writeTerminal: (terminalId, input) => this.terminals.write(terminalId, ensureTerminalSubmit(input)),
     };
+  }
+
+  /** Execute OHCANVAS lines printed by real interactive PTY terminals. */
+  private runTerminalCanvasAction(sourceTerminalId: string, action: CanvasCliAction): string {
+    return runCanvasAction(action, this.conductorDeps(DEFAULT_WORKSPACE), sourceTerminalId);
   }
 
   async handle(msg: ClientMsg): Promise<void> {

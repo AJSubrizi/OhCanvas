@@ -67,7 +67,7 @@ export function parseCanvasActionLine(line: string): ParsedCanvasLine {
     }
     case "spawn_agent": {
       const agentType = typeof obj.agentType === "string" ? obj.agentType : undefined;
-      if (agentType && !["codex", "claude-code", "cursor", "pi"].includes(agentType)) {
+      if (agentType && !["codex", "claude-code", "cursor", "pi", "hermes"].includes(agentType)) {
         return { kind: "invalid", line, error: `Unsupported agentType: ${agentType}` };
       }
       return {

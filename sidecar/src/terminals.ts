@@ -3,6 +3,7 @@ import path from "node:path";
 import pty, { type IPty } from "@lydell/node-pty";
 import type { ServerMsg, TerminalKind } from "./protocol.ts";
 import { buildTerminalCommand } from "./terminal-commands.ts";
+import { parseCanvasActionLine, type CanvasCliAction } from "./canvas-actions.ts";
 
 let counter = 0;
 export const newTerminalId = (prefix = "term") => `${prefix}_${Date.now().toString(36)}_${counter++}`;
@@ -49,6 +50,11 @@ export interface StartTerminalOptions {
   initialInput?: string;
 }
 
+export type TerminalCanvasActionHandler = (
+  sourceTerminalId: string,
+  action: CanvasCliAction,
+) => string | void;
+
 export function resolveTerminalWorkdir(cwd?: string): string {
   return cwd && cwd.trim() ? expandHome(cwd.trim()) : os.homedir();
 }
@@ -63,7 +69,10 @@ export class TerminalManager {
   // with the same detection every time the dev server recompiles/restarts.
   private reportedUrls = new Map<string, Set<string>>();
 
-  constructor(private send: (msg: ServerMsg) => void) {}
+  constructor(
+    private send: (msg: ServerMsg) => void,
+    private onCanvasAction?: TerminalCanvasActionHandler,
+  ) {}
 
   start(opts: StartTerminalOptions): string {
     const terminalId = opts.terminalId ?? newTerminalId(opts.kind);
@@ -113,7 +122,7 @@ export class TerminalManager {
       this.send({ type: "terminal_output", terminalId, chunk });
       // In parallel, scan complete lines for a dev-server URL. Non-blocking:
       // detection only emits an extra message when a NEW url is found.
-      this.scanForDevServerUrl(terminalId, chunk);
+      this.scanOutputLines(terminalId, chunk);
     });
     if (opts.initialInput) child.write(`${opts.initialInput}\r`);
     child.onExit(({ exitCode }) => {
@@ -182,7 +191,7 @@ export class TerminalManager {
    * dev-server URL, and emit terminal_url_detected once per unique URL.
    * A line is "complete" when terminated by \n (or \r alone, for CR-only PTYs).
    */
-  private scanForDevServerUrl(terminalId: string, chunk: string): void {
+  private scanOutputLines(terminalId: string, chunk: string): void {
     const prev = this.lineBuffers.get(terminalId) ?? "";
     const acc = prev + chunk;
     // Split on newlines, keeping a possible trailing partial line buffered.
@@ -191,12 +200,37 @@ export class TerminalManager {
     this.lineBuffers.set(terminalId, remainder);
     const reported = this.reportedUrls.get(terminalId) ?? new Set<string>();
     for (const line of parts) {
-      const url = detectDevServerUrl(line);
+      const clean = stripAnsi(line).trim();
+      this.scanForCanvasAction(terminalId, clean);
+
+      const url = detectDevServerUrl(clean);
       if (!url) continue;
       if (reported.has(url)) continue;
       reported.add(url);
       this.reportedUrls.set(terminalId, reported);
       this.send({ type: "terminal_url_detected", terminalId, url });
+    }
+  }
+
+  private scanForCanvasAction(terminalId: string, line: string): void {
+    if (!line.startsWith("OHCANVAS ")) return;
+    const parsed = parseCanvasActionLine(line);
+    if (parsed.kind === "none") return;
+    if (parsed.kind === "invalid") {
+      this.send({
+        type: "terminal_output",
+        terminalId,
+        chunk: `\r\n[OhCanvas] ${parsed.error}\r\n`,
+      });
+      return;
+    }
+    const summary = this.onCanvasAction?.(terminalId, parsed.action);
+    if (summary) {
+      this.send({
+        type: "terminal_output",
+        terminalId,
+        chunk: `\r\n[OhCanvas] ${summary}\r\n`,
+      });
     }
   }
 }

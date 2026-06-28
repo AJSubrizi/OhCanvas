@@ -164,7 +164,19 @@ function BrowserNode({ id, data }: CanvasNodeProps<BrowserNodeData>) {
     }
   };
 
-  const canSend = editor.annotations.length > 0;
+  const openExternal = async () => {
+    try {
+      const { openUrl } = await import("@tauri-apps/plugin-opener");
+      await openUrl(src);
+    } catch {
+      window.open(src, "_blank", "noopener,noreferrer");
+    }
+  };
+
+  const canSend = editor.annotations.length > 0 && Boolean(resolvedTerminalId);
+  const autoTargetLabel = selectedTerminalId
+    ? terminalOptions.find((option) => option.id === selectedTerminalId)?.label
+    : terminalOptions[0]?.label;
 
   return (
     <div className={`browser-card ${editor.editing ? "is-editing" : ""} ${device === "mobile" ? "is-mobile" : ""}`}>
@@ -195,6 +207,9 @@ function BrowserNode({ id, data }: CanvasNodeProps<BrowserNodeData>) {
           aria-label="Toggle annotation mode"
         >
           ✎
+        </button>
+        <button className="nodrag" onClick={openExternal} title="Open externally" aria-label="Open externally">
+          ↗
         </button>
         <button className="browser-card__close nodrag" onClick={close} title="Close browser">
           ×
@@ -313,7 +328,7 @@ function BrowserNode({ id, data }: CanvasNodeProps<BrowserNodeData>) {
           onChange={(e) => setTargetTerminalId(e.target.value)}
           aria-label="Target terminal"
         >
-          <option value="">Auto: {terminalOptions[0]?.label ?? "no terminal"}</option>
+          <option value="">Auto: {autoTargetLabel ?? "no terminal"}</option>
           {terminalOptions.map((option) => (
             <option key={option.id} value={option.id}>
               {option.label}
@@ -348,7 +363,11 @@ function BrowserNode({ id, data }: CanvasNodeProps<BrowserNodeData>) {
       </div>
 
       {loading && <div className="browser-card__status">Loading…</div>}
-      {failed && <div className="browser-card__status browser-card__status--error">Preview failed</div>}
+      {failed && (
+        <div className="browser-card__status browser-card__status--error browser-card__status--actionable">
+          Preview failed · <button className="nodrag" onClick={openExternal}>Open outside</button>
+        </div>
+      )}
       {editor.editing && terminalOptions.length === 0 && (
         <div className="browser-card__status browser-card__status--error">Open a terminal to attach</div>
       )}

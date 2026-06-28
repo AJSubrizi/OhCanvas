@@ -18,7 +18,7 @@ const HINTS = [
   'Ask: "chiudi tutti i terminali"',
   'Ask: "apri localhost:3000 nel browser"',
   'Ask: "apri codex in questa cartella"',
-  'Ask: "manda a claude: sistema il bug"',
+  'Ask: "chiedi a codex di coordinare claude e pi"',
   "Cmd+K assistant · Cmd+Shift+T tile · Cmd+Shift+B browser",
 ];
 
@@ -173,6 +173,157 @@ async function tryMultiSpawn(text: string, ctx: FolderCtx): Promise<string | nul
   return null;
 }
 
+type TerminalRuntimeView = {
+  kind: TerminalKind;
+  title?: string;
+  cwd?: string;
+  running?: boolean;
+};
+
+type TerminalMap = Record<string, TerminalRuntimeView>;
+
+const ORCHESTRATOR_KINDS = new Set<TerminalKind>(["codex", "claude-code", "pi", "cursor", "hermes"]);
+
+function activeTerminals(terminals: TerminalMap) {
+  return Object.entries(terminals).filter(([, runtime]) => runtime.running);
+}
+
+function firstRunningTerminalByKind(terminals: TerminalMap, kind: TerminalKind) {
+  return activeTerminals(terminals).find(([, runtime]) => runtime.kind === kind) ?? null;
+}
+
+function terminalDisplayName(id: string, runtime: TerminalRuntimeView) {
+  return runtime.title || labelForCli(runtime.kind) || id;
+}
+
+function mentionsMultipleCliActors(text: string, terminals: TerminalMap) {
+  const l = text.toLowerCase();
+  const mentionedKinds = new Set<TerminalKind>();
+  for (const kind of ["pi", "codex", "claude-code", "cursor", "hermes"] as TerminalKind[]) {
+    const label = labelForCli(kind).toLowerCase();
+    if (l.includes(label) || (kind === "claude-code" && /\b(cloud|claude)\b/i.test(l))) {
+      mentionedKinds.add(kind);
+    }
+  }
+  let mentionedTitles = 0;
+  for (const [, runtime] of activeTerminals(terminals)) {
+    const title = (runtime.title || "").toLowerCase();
+    const first = title.split(/[ ·-]/)[0];
+    if (first && first.length > 2 && l.includes(first)) mentionedTitles += 1;
+  }
+  return mentionedKinds.size + mentionedTitles >= 2;
+}
+
+function wantsAgentOrchestration(text: string, targetKind: TerminalKind, terminals: TerminalMap) {
+  if (!ORCHESTRATOR_KINDS.has(targetKind)) return false;
+  const mentionsTeamScope =
+    /\b(altr[ei]|other|another|team|squadra|agenti|agents|cli|terminali|terminals)\b/i.test(text);
+  const mentionsCoordination =
+    /\b(orchestra|orchestrate|coordina|coordinate|comanda|control|delegate|delega|supervisiona|gestisci|manage)\b/i.test(text);
+  const mentionsMultipleActors = mentionsMultipleCliActors(text, terminals);
+
+  return mentionsMultipleActors || mentionsCoordination || mentionsTeamScope;
+}
+
+function stripOrchestratorLead(text: string, targetKind: TerminalKind) {
+  const targetWords =
+    targetKind === "claude-code" ? "(?:claude|cloud|claude code)" :
+    targetKind === "pi" ? "(?:pi|pai|piai)" :
+    targetKind === "codex" ? "(?:codex|openai)" :
+    targetKind === "hermes" ? "(?:hermes|ermes|ermès)" :
+    "(?:cursor)";
+  const re = new RegExp(
+    String.raw`^\s*(?:ask|tell|prompt|send to|manda a|chiedi a|di(?:'|ci)? a|usa|use)\s+${targetWords}\s*(?:di|to|per|:|-)?\s*`,
+    "i",
+  );
+  return text.replace(re, "").trim() || text.trim();
+}
+
+function buildCliOrchestrationPrompt(
+  userText: string,
+  targetId: string,
+  targetRuntime: TerminalRuntimeView,
+  terminals: TerminalMap,
+  flowNodes: Array<{ id: string; type?: string | null; data?: unknown }>,
+) {
+  const roster = activeTerminals(terminals)
+    .map(([id, runtime], index) => {
+      const selected = flowNodes.some((node) => {
+        const data = node.data as Record<string, unknown> | undefined;
+        return Boolean((data?.terminalId === id || node.id === id) && (node as any).selected);
+      });
+      const role = id === targetId ? "you/orchestrator" : "available worker";
+      return [
+        `${index + 1}. ${terminalDisplayName(id, runtime)} (${labelForCli(runtime.kind)})`,
+        `id=${id}`,
+        `role=${role}`,
+        runtime.cwd ? `cwd=${runtime.cwd}` : "cwd=unknown",
+        selected ? "selected=true" : "",
+      ].filter(Boolean).join(" | ");
+    })
+    .join("\n");
+
+  const task = stripOrchestratorLead(userText, targetRuntime.kind);
+  return [
+    "You are controlling OhCanvas from this real CLI terminal.",
+    "You can coordinate the other CLI terminals by printing OHCANVAS control lines.",
+    "Important: when you want OhCanvas to act, print a single compact JSON line prefixed with OHCANVAS. No markdown fences.",
+    "",
+    "Available actions:",
+    'OHCANVAS {"action":"send_terminal","terminalId":"term_id","input":"message or command for that CLI"}',
+    'OHCANVAS {"action":"send_terminal","name":"Claude","input":"message or command for that CLI"}',
+    'OHCANVAS {"action":"open_browser","url":"http://localhost:3000"}',
+    'OHCANVAS {"action":"run_shell","command":"pnpm test","cwd":"/path/to/project"}',
+    'OHCANVAS {"action":"spawn_agent","agentType":"codex","name":"Reviewer","task":"review the change","cwd":"/path/to/project"}',
+    'OHCANVAS {"action":"add_note","text":"short status note"}',
+    "",
+    "Terminals:",
+    roster || "No other terminals are open yet.",
+    "",
+    "Rules:",
+    "- Prefer terminalId over name when delegating.",
+    "- If you delegate to another terminal, include enough context for that CLI to act.",
+    "- Do not claim you have delegated unless you printed the OHCANVAS send_terminal line.",
+    "- After delegating, briefly summarize what you sent.",
+    "",
+    "User order:",
+    task,
+  ].join("\n");
+}
+
+function tryOrchestrateViaCli(text: string, terminals: TerminalMap, flowNodes: any[]): string | null {
+  const targetKind = parseCliKind(text);
+  if (!targetKind || !wantsAgentOrchestration(text, targetKind, terminals)) return null;
+
+  const existing = firstRunningTerminalByKind(terminals, targetKind);
+  const label = labelForCli(targetKind);
+  if (existing) {
+    const [terminalId, runtime] = existing;
+    const prompt = buildCliOrchestrationPrompt(text, terminalId, runtime, terminals, flowNodes);
+    sidecar.writeTerminal(terminalId, `${prompt}\r`);
+    selectTerminalNode(terminalId);
+    return `Asked ${label} to coordinate the CLI team`;
+  }
+
+  const folder = parseFolder(text, { terminals });
+  const terminalId = `${targetKind}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+  const runtime: TerminalRuntimeView = {
+    kind: targetKind,
+    title: label,
+    cwd: folder?.path,
+    running: true,
+  };
+  const prompt = buildCliOrchestrationPrompt(text, terminalId, runtime, terminals, flowNodes);
+  sidecar.startTerminal({
+    terminalId,
+    kind: targetKind,
+    cwd: folder?.path,
+    title: folder?.name ? `${label} · ${folder.name}` : label,
+    initialInput: prompt,
+  });
+  return `Opened ${label} as orchestrator`;
+}
+
 function isTerminalNode(node: { type?: string | null }) {
   return node.type === "terminal" || node.type === "shell";
 }
@@ -225,6 +376,9 @@ async function run(text: string): Promise<string | null> {
   // single-command handlers, so counts/conjunctions aren't swallowed as one CLI.
   const multi = await tryMultiSpawn(t, folderCtx);
   if (multi) return multi;
+
+  const orchestrated = tryOrchestrateViaCli(t, terminals, flowNodes);
+  if (orchestrated) return orchestrated;
 
   const wantsAll = /\b(all|every|tutti|tutte|ogni)\b/i.test(lower);
   const wantsClose = /\b(close|kill|stop|exit|chiudi|chiudere|uccidi|ferma|termina)\b/i.test(lower);

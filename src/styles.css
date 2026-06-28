@@ -1313,6 +1313,21 @@ html, body, #root {
 
 .browser-card__status--error { color: var(--err); }
 
+.browser-card__status--actionable {
+  pointer-events: auto;
+}
+
+.browser-card__status button {
+  border: none;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .browser-card__frame-wrap {
   position: relative;
   flex: 1;

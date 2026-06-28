@@ -58,6 +58,15 @@ test("parses spawn_agent with cwd", () => {
   }
 });
 
+test("parses hermes spawn_agent", () => {
+  const parsed = parseCanvasActionLine('OHCANVAS {"action":"spawn_agent","agentType":"hermes","name":"Scout"}');
+  assert.equal(parsed.kind, "action");
+  if (parsed.kind === "action") {
+    assert.equal(parsed.action.action, "spawn_agent");
+    assert.equal(parsed.action.agentType, "hermes");
+  }
+});
+
 test("parses kill_terminal action", () => {
   const parsed = parseCanvasActionLine('OHCANVAS {"action":"kill_terminal","terminalId":"term_abc123"}');
   assert.deepEqual(parsed, {

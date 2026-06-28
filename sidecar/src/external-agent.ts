@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import os from "node:os";
 import type { AgentType, CanvasNodeInfo, ServerMsg } from "./protocol.ts";
 import { parseCanvasActionLine, type CanvasCliAction } from "./canvas-actions.ts";
+import { findTerminalByName } from "./conductor-action.ts";
 
 /**
  * Best-effort adapter for CLI coding agents. Each prompt runs the CLI in a
@@ -265,10 +266,7 @@ export class ExternalRunner {
       case "send_terminal": {
         let terminalId = action.terminalId;
         if (!terminalId && action.name) {
-          const wanted = action.name.toLowerCase();
-          const match = this.deps
-            .getCanvasState()
-            .find((n) => n.kind === "terminal" && n.title.toLowerCase() === wanted);
+          const match = findTerminalByName(this.deps.getCanvasState(), action.name);
           terminalId = match?.id;
         }
         if (!terminalId) {

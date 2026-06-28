@@ -136,10 +136,7 @@ export function runCanvasAction(
     case "send_terminal": {
       let terminalId = action.terminalId;
       if (!terminalId && action.name) {
-        const wanted = action.name.toLowerCase();
-        const match = deps
-          .getCanvasState()
-          .find((n) => n.kind === "terminal" && n.title.toLowerCase() === wanted);
+        const match = findTerminalByName(deps.getCanvasState(), action.name);
         terminalId = match?.id;
       }
       if (!terminalId) {
@@ -150,8 +147,30 @@ export function runCanvasAction(
         });
         return `No terminal "${action.name ?? action.terminalId}"`;
       }
-      deps.writeTerminal?.(terminalId, action.input);
+      deps.writeTerminal?.(terminalId, ensureSubmit(action.input));
       return `Send to ${action.name ?? terminalId}`;
     }
   }
+}
+
+export function findTerminalByName(nodes: CanvasNodeInfo[], name: string): CanvasNodeInfo | undefined {
+  const wanted = normalizeName(name);
+  return nodes.find((n) => {
+    if (n.kind !== "terminal") return false;
+    const title = normalizeName(n.title);
+    const id = normalizeName(n.id);
+    return title === wanted || id === wanted || title.startsWith(wanted) || title.includes(wanted);
+  });
+}
+
+function normalizeName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\s+·\s+.*/, "")
+    .replace(/[^a-z0-9_-]+/g, " ")
+    .trim();
+}
+
+function ensureSubmit(input: string): string {
+  return /[\r\n]$/.test(input) ? input : `${input}\r`;
 }
