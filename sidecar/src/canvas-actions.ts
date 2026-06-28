@@ -9,7 +9,12 @@ export type CanvasCliAction =
   | { action: "add_shape"; shape: "rect" | "ellipse"; label?: string; x?: number; y?: number }
   | { action: "kill_terminal"; terminalId: string }
   | { action: "focus_terminal"; terminalId: string }
-  | { action: "send_terminal"; name?: string; terminalId?: string; input: string };
+  | { action: "send_terminal"; name?: string; terminalId?: string; input: string }
+  | { action: "broadcast_terminal"; input: string; excludeTerminalId?: string; kind?: AgentType | "shell" }
+  | { action: "tile_windows" }
+  | { action: "close_browsers" }
+  | { action: "close_terminals"; exceptTerminalId?: string; exceptName?: string }
+  | { action: "open_preview"; url: string; terminalId?: string };
 
 export type ParsedCanvasLine =
   | { kind: "none"; line: string }
@@ -148,6 +153,50 @@ export function parseCanvasActionLine(line: string): ParsedCanvasLine {
       return {
         kind: "action",
         action: { action: "send_terminal", name, terminalId, input: obj.input },
+      };
+    }
+    case "broadcast_terminal": {
+      if (typeof obj.input !== "string" || obj.input === "") {
+        return { kind: "invalid", line, error: "broadcast_terminal requires a non-empty input." };
+      }
+      const kind = typeof obj.kind === "string" ? obj.kind : undefined;
+      if (kind && !["codex", "claude-code", "cursor", "pi", "hermes", "shell"].includes(kind)) {
+        return { kind: "invalid", line, error: `Unsupported terminal kind: ${kind}` };
+      }
+      return {
+        kind: "action",
+        action: {
+          action: "broadcast_terminal",
+          input: obj.input,
+          excludeTerminalId: typeof obj.excludeTerminalId === "string" ? obj.excludeTerminalId : undefined,
+          kind: kind as AgentType | "shell" | undefined,
+        },
+      };
+    }
+    case "tile_windows":
+      return { kind: "action", action: { action: "tile_windows" } };
+    case "close_browsers":
+      return { kind: "action", action: { action: "close_browsers" } };
+    case "close_terminals":
+      return {
+        kind: "action",
+        action: {
+          action: "close_terminals",
+          exceptTerminalId: typeof obj.exceptTerminalId === "string" ? obj.exceptTerminalId : undefined,
+          exceptName: typeof obj.exceptName === "string" ? obj.exceptName : undefined,
+        },
+      };
+    case "open_preview": {
+      if (typeof obj.url !== "string" || obj.url.trim() === "") {
+        return { kind: "invalid", line, error: "open_preview requires a non-empty url." };
+      }
+      return {
+        kind: "action",
+        action: {
+          action: "open_preview",
+          url: obj.url,
+          terminalId: typeof obj.terminalId === "string" ? obj.terminalId : undefined,
+        },
       };
     }
     default:

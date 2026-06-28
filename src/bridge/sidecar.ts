@@ -7,7 +7,17 @@ import {
   type TerminalKind,
   SIDECAR_URL,
 } from "./protocol";
-import { spawnBrowserNode, spawnNoteNode, spawnShapeNode, spawnTerminalNode, spawnTextNode, nextAgentName } from "../canvas/nodes";
+import {
+  retileTerminalsIfAuto,
+  selectTerminalNode,
+  spawnBrowserNode,
+  spawnNoteNode,
+  spawnShapeNode,
+  spawnTerminalNode,
+  spawnTextNode,
+  tileTerminals,
+  nextAgentName,
+} from "../canvas/nodes";
 import { llmComplete, llmSupported } from "../ui/llm";
 
 type TerminalOutputListener = (chunk: string) => void;
@@ -123,7 +133,7 @@ class SidecarClient {
 
       case "canvas_spawn_browser":
         spawnBrowserNode(msg.url);
-        useCanvasStore.getState().setLastCanvasAction("Agent opened browser");
+        useCanvasStore.getState().pushCanvasActivity(`Opened browser ${msg.url}`);
         break;
       case "canvas_spawn_agent":
         // Always spawn as a real terminal (product direction: no more fake agent cards)
@@ -133,16 +143,69 @@ class SidecarClient {
           cwd: msg.cwd,
           initialInput: msg.task,
         });
+        useCanvasStore.getState().pushCanvasActivity(`Opened ${msg.name ?? msg.agentType ?? "agent"}`);
         break;
       case "canvas_add_note":
         spawnNoteNode(msg.text, msg.x, msg.y);
-        useCanvasStore.getState().setLastCanvasAction("Agent added note");
+        useCanvasStore.getState().pushCanvasActivity("Added note");
         break;
       case "canvas_add_text":
         spawnTextNode(msg.text, msg.x, msg.y);
+        useCanvasStore.getState().pushCanvasActivity("Added text");
         break;
       case "canvas_add_shape":
         spawnShapeNode(msg.shape, msg.label, msg.x, msg.y);
+        useCanvasStore.getState().pushCanvasActivity(`Added ${msg.shape}`);
+        break;
+      case "canvas_tile_windows":
+        tileTerminals();
+        useCanvasStore.getState().pushCanvasActivity("Arranged windows");
+        break;
+      case "canvas_close_browsers": {
+        const store = useCanvasStore.getState();
+        const count = store.flowNodes.filter((node) => node.type === "browser").length;
+        store.setFlowNodes(store.flowNodes.filter((node) => node.type !== "browser"));
+        retileTerminalsIfAuto();
+        store.pushCanvasActivity(count ? `Closed ${count} browser preview${count === 1 ? "" : "s"}` : "No browser previews to close");
+        break;
+      }
+      case "canvas_close_terminals": {
+        const store = useCanvasStore.getState();
+        const ids = new Set<string>();
+        Object.keys(store.terminals).forEach((id) => {
+          if (id !== msg.exceptTerminalId) ids.add(id);
+        });
+        store.flowNodes.forEach((node) => {
+          if (node.type !== "terminal" && node.type !== "shell") return;
+          const data = node.data as Record<string, unknown>;
+          const id = String(data.terminalId ?? data.shellId ?? node.id);
+          if (id && id !== msg.exceptTerminalId) ids.add(id);
+        });
+        ids.forEach((id) => this.killTerminal(id));
+        store.setFlowNodes(
+          store.flowNodes.filter((node) => {
+            if (node.type !== "terminal" && node.type !== "shell") return true;
+            const data = node.data as Record<string, unknown>;
+            const id = String(data.terminalId ?? data.shellId ?? node.id);
+            return id === msg.exceptTerminalId;
+          }),
+        );
+        retileTerminalsIfAuto();
+        store.pushCanvasActivity(
+          ids.size ? `Closed ${ids.size} terminal${ids.size === 1 ? "" : "s"}` : "No terminals to close",
+        );
+        break;
+      }
+      case "canvas_focus_terminal":
+        selectTerminalNode(msg.terminalId);
+        useCanvasStore.getState().pushCanvasActivity(`Focused terminal ${msg.terminalId}`);
+        break;
+      case "canvas_open_preview":
+        useCanvasStore.getState().openPreview(msg.url, msg.terminalId);
+        useCanvasStore.getState().pushCanvasActivity(`Opened preview ${msg.url}`);
+        break;
+      case "canvas_activity":
+        useCanvasStore.getState().pushCanvasActivity(msg.text);
         break;
 
       case "terminal_create":

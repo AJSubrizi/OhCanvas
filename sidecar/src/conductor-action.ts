@@ -49,7 +49,11 @@ export function buildConductorPrompt(message: string, cwd: string, nodes: Canvas
     'OHCANVAS {"action":"send_terminal","name":"Vale","input":"refactor the hero section"}',
     'OHCANVAS {"action":"run_shell","command":"pnpm dev"}',
     'OHCANVAS {"action":"open_browser","url":"http://localhost:3000"}',
+    'OHCANVAS {"action":"open_preview","url":"http://localhost:3000"}',
     'OHCANVAS {"action":"spawn_agent","agentType":"pi","name":"Wren","task":"write tests","cwd":"/path/to/project"}',
+    'OHCANVAS {"action":"broadcast_terminal","input":"run pnpm test"}',
+    'OHCANVAS {"action":"tile_windows"}',
+    'OHCANVAS {"action":"close_browsers"}',
     'OHCANVAS {"action":"add_note","text":"Next: polish the hero section"}',
     'OHCANVAS {"action":"kill_terminal","terminalId":"term_xxx"}',
     "Prefer send_terminal to delegate to an existing named agent. Do not wrap OHCANVAS lines in markdown fences.",
@@ -127,10 +131,11 @@ export function runCanvasAction(
     }
     case "kill_terminal": {
       deps.killTerminal?.(action.terminalId);
+      deps.send({ type: "canvas_activity", text: `Closed terminal ${action.terminalId}` });
       return `Kill ${action.terminalId}`;
     }
     case "focus_terminal": {
-      // No frontend message for focus today; surface it as a no-op summary.
+      deps.send({ type: "canvas_focus_terminal", terminalId: action.terminalId });
       return `Focus ${action.terminalId}`;
     }
     case "send_terminal": {
@@ -148,7 +153,44 @@ export function runCanvasAction(
         return `No terminal "${action.name ?? action.terminalId}"`;
       }
       deps.writeTerminal?.(terminalId, ensureSubmit(action.input));
+      deps.send({
+        type: "canvas_activity",
+        text: `Sent to ${action.name ?? terminalId}: ${action.input.slice(0, 80)}`,
+      });
       return `Send to ${action.name ?? terminalId}`;
+    }
+    case "broadcast_terminal": {
+      const targets = deps
+        .getCanvasState()
+        .filter((n) => n.kind === "terminal")
+        .filter((n) => n.id !== action.excludeTerminalId)
+        .filter((n) => !action.kind || n.terminalKind === action.kind);
+      for (const target of targets) deps.writeTerminal?.(target.id, ensureSubmit(action.input));
+      deps.send({
+        type: "canvas_activity",
+        text: `Broadcast to ${targets.length} terminal${targets.length === 1 ? "" : "s"}`,
+      });
+      return `Broadcast to ${targets.length} terminal${targets.length === 1 ? "" : "s"}`;
+    }
+    case "tile_windows": {
+      deps.send({ type: "canvas_tile_windows" });
+      return "Tile windows";
+    }
+    case "close_browsers": {
+      deps.send({ type: "canvas_close_browsers" });
+      return "Close browsers";
+    }
+    case "close_terminals": {
+      let exceptTerminalId = action.exceptTerminalId;
+      if (!exceptTerminalId && action.exceptName) {
+        exceptTerminalId = findTerminalByName(deps.getCanvasState(), action.exceptName)?.id;
+      }
+      deps.send({ type: "canvas_close_terminals", exceptTerminalId });
+      return exceptTerminalId ? `Close terminals except ${exceptTerminalId}` : "Close terminals";
+    }
+    case "open_preview": {
+      deps.send({ type: "canvas_open_preview", url: action.url, terminalId: action.terminalId });
+      return `Open preview ${action.url}`;
     }
   }
 }

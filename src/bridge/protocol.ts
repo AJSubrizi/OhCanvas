@@ -189,6 +189,12 @@ export type ServerMsg =
   | { type: "canvas_add_note"; text: string; x?: number; y?: number }
   | { type: "canvas_add_text"; text: string; x?: number; y?: number }
   | { type: "canvas_add_shape"; shape: "rect" | "ellipse"; label?: string; x?: number; y?: number }
+  | { type: "canvas_tile_windows" }
+  | { type: "canvas_close_browsers" }
+  | { type: "canvas_close_terminals"; exceptTerminalId?: string }
+  | { type: "canvas_focus_terminal"; terminalId: string }
+  | { type: "canvas_open_preview"; url: string; terminalId?: string }
+  | { type: "canvas_activity"; text: string }
   | { type: "canvas_shell_create"; shellId: string; command: string; cwd?: string }
   | { type: "shell_output"; shellId: string; chunk: string }
   | { type: "shell_exit"; shellId: string; code: number | null }

@@ -104,9 +104,13 @@ An AI agent can manipulate the canvas by printing JSON commands to stdout:
 
 ```
 OHCANVAS {"action":"open_browser","url":"http://localhost:3000"}
+OHCANVAS {"action":"open_preview","url":"http://localhost:3000"}
 OHCANVAS {"action":"run_shell","command":"pnpm dev"}
 OHCANVAS {"action":"send_terminal","name":"Claude","input":"run the failing tests"}
+OHCANVAS {"action":"broadcast_terminal","input":"check the current browser issue"}
 OHCANVAS {"action":"spawn_agent","agentType":"codex","name":"Reviewer","task":"review this change","cwd":"/path/to/project"}
+OHCANVAS {"action":"tile_windows"}
+OHCANVAS {"action":"close_browsers"}
 OHCANVAS {"action":"add_note","text":"Idea to explore"}
 OHCANVAS {"action":"kill_terminal","terminalId":"term_abc123"}
 OHCANVAS {"action":"focus_terminal","terminalId":"term_abc123"}
@@ -116,6 +120,16 @@ The bottom command bar can now hand orchestration to a real CLI, for example:
 `chiedi a codex di coordinare claude e pi per sistemare il browser`. The selected
 CLI receives a compact control prompt and can delegate work to the other live
 terminals by emitting `OHCANVAS` lines.
+
+Useful command bar examples:
+
+```
+manda a tutti: controllate il browser e proponete una fix
+chiudi tutti i terminali tranne codex
+apri localhost:5173 nel browser
+apri preview localhost:5173
+sistema le finestre
+```
 
 ---
 

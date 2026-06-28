@@ -196,6 +196,21 @@ function terminalDisplayName(id: string, runtime: TerminalRuntimeView) {
   return runtime.title || labelForCli(runtime.kind) || id;
 }
 
+function findRunningTerminalByKind(terminals: TerminalMap, kind: TerminalKind) {
+  const match = firstRunningTerminalByKind(terminals, kind);
+  return match ? { id: match[0], runtime: match[1] } : null;
+}
+
+function findRunningTerminalByTitle(terminals: TerminalMap, name: string) {
+  const wanted = name.toLowerCase().trim();
+  const match = activeTerminals(terminals).find(([id, runtime]) => {
+    const title = (runtime.title || "").toLowerCase();
+    const first = title.split(/[ ·-]/)[0];
+    return id.toLowerCase() === wanted || title === wanted || first === wanted || title.includes(wanted);
+  });
+  return match ? { id: match[0], runtime: match[1] } : null;
+}
+
 function mentionsMultipleCliActors(text: string, terminals: TerminalMap) {
   const l = text.toLowerCase();
   const mentionedKinds = new Set<TerminalKind>();
@@ -273,8 +288,12 @@ function buildCliOrchestrationPrompt(
     'OHCANVAS {"action":"send_terminal","terminalId":"term_id","input":"message or command for that CLI"}',
     'OHCANVAS {"action":"send_terminal","name":"Claude","input":"message or command for that CLI"}',
     'OHCANVAS {"action":"open_browser","url":"http://localhost:3000"}',
+    'OHCANVAS {"action":"open_preview","url":"http://localhost:3000"}',
     'OHCANVAS {"action":"run_shell","command":"pnpm test","cwd":"/path/to/project"}',
     'OHCANVAS {"action":"spawn_agent","agentType":"codex","name":"Reviewer","task":"review the change","cwd":"/path/to/project"}',
+    'OHCANVAS {"action":"broadcast_terminal","input":"short instruction for every CLI"}',
+    'OHCANVAS {"action":"tile_windows"}',
+    'OHCANVAS {"action":"close_browsers"}',
     'OHCANVAS {"action":"add_note","text":"short status note"}',
     "",
     "Terminals:",
@@ -324,6 +343,21 @@ function tryOrchestrateViaCli(text: string, terminals: TerminalMap, flowNodes: a
   return `Opened ${label} as orchestrator`;
 }
 
+function tryBroadcastToTerminals(text: string, terminals: TerminalMap): string | null {
+  const match = text.match(
+    /^(?:broadcast|manda a tutti|manda agli agenti|send to all|tell all|di a tutti|scrivi a tutti)(?:\s+(?:i\s+)?(?:terminali|agents?|agenti|cli))?\s*[:\-]?\s*(.+)$/i,
+  );
+  if (!match) return null;
+  const input = match[1].trim();
+  if (!input) return null;
+  const targets = activeTerminals(terminals);
+  for (const [id] of targets) sidecar.writeTerminal(id, `${input}\r`);
+  useCanvasStore.getState().pushCanvasActivity(`Broadcast to ${targets.length} terminal${targets.length === 1 ? "" : "s"}`);
+  return targets.length
+    ? `Sent to ${targets.length} terminal${targets.length === 1 ? "" : "s"}`
+    : "No terminals to broadcast to";
+}
+
 function isTerminalNode(node: { type?: string | null }) {
   return node.type === "terminal" || node.type === "shell";
 }
@@ -332,21 +366,33 @@ function isBrowserNode(node: { type?: string | null }) {
   return node.type === "browser";
 }
 
-async function closeTerminalWindows() {
+async function closeTerminalWindows(exceptTerminalId?: string | null) {
   const store = useCanvasStore.getState();
   const terminalIds = new Set<string>();
 
-  Object.keys(store.terminals).forEach((id) => terminalIds.add(id));
+  Object.keys(store.terminals).forEach((id) => {
+    if (id !== exceptTerminalId) terminalIds.add(id);
+  });
   store.flowNodes.forEach((node: any) => {
     if (!isTerminalNode(node)) return;
     const data = node.data as Record<string, unknown> | undefined;
     const id = String(data?.terminalId ?? data?.shellId ?? node.id);
-    if (id) terminalIds.add(id);
+    if (id && id !== exceptTerminalId) terminalIds.add(id);
   });
 
   terminalIds.forEach((id) => sidecar.killTerminal(id));
-  store.setFlowNodes(store.flowNodes.filter((node) => !isTerminalNode(node)));
+  store.setFlowNodes(
+    store.flowNodes.filter((node) => {
+      if (!isTerminalNode(node)) return true;
+      const data = node.data as Record<string, unknown> | undefined;
+      const id = String(data?.terminalId ?? data?.shellId ?? node.id);
+      return id === exceptTerminalId;
+    }),
+  );
   retileTerminalsIfAuto();
+  store.pushCanvasActivity(
+    terminalIds.size ? `Closed ${terminalIds.size} terminal${terminalIds.size === 1 ? "" : "s"}` : "No terminals to close",
+  );
   return terminalIds.size;
 }
 
@@ -355,6 +401,7 @@ async function closeBrowserWindows() {
   const count = store.flowNodes.filter(isBrowserNode).length;
   store.setFlowNodes(store.flowNodes.filter((node) => !isBrowserNode(node)));
   retileTerminalsIfAuto();
+  store.pushCanvasActivity(count ? `Closed ${count} browser preview${count === 1 ? "" : "s"}` : "No browser previews to close");
   return count;
 }
 
@@ -377,6 +424,9 @@ async function run(text: string): Promise<string | null> {
   const multi = await tryMultiSpawn(t, folderCtx);
   if (multi) return multi;
 
+  const broadcast = tryBroadcastToTerminals(t, terminals);
+  if (broadcast) return broadcast;
+
   const orchestrated = tryOrchestrateViaCli(t, terminals, flowNodes);
   if (orchestrated) return orchestrated;
 
@@ -384,6 +434,19 @@ async function run(text: string): Promise<string | null> {
   const wantsClose = /\b(close|kill|stop|exit|chiudi|chiudere|uccidi|ferma|termina)\b/i.test(lower);
   const mentionsTerminal = /\b(terminals?|terminali|cli|agents?|agenti)\b/i.test(lower);
   const mentionsBrowser = /\b(browsers?|preview|previews|browser|anteprime?|finestre browser)\b/i.test(lower);
+
+  const exceptMatch = t.match(
+    /\b(?:close|kill|stop|chiudi|ferma|termina)\s+(?:all|tutti|tutte|ogni|everything|tutto)\s+(?:terminali|terminals?|cli|agents?|agenti)?\s*(?:except|tranne|salvo|eccetto)\s+([\w .-]+)/i,
+  );
+  if (exceptMatch) {
+    const ref = exceptMatch[1].trim();
+    const kind = parseCliKind(ref);
+    const target = kind ? findRunningTerminalByKind(terminals, kind) : findRunningTerminalByTitle(terminals, ref);
+    const count = await closeTerminalWindows(target?.id);
+    return target
+      ? `Closed ${count} terminal${count === 1 ? "" : "s"}, kept ${terminalDisplayName(target.id, target.runtime)}`
+      : `Closed ${count} terminal${count === 1 ? "" : "s"}`;
+  }
 
   if (wantsClose && wantsAll && mentionsTerminal) {
     const count = await closeTerminalWindows();
@@ -399,14 +462,24 @@ async function run(text: string): Promise<string | null> {
     /(?:open|apri|browse)\s+(?:to\s+)?(https?:\/\/\S+|localhost(?::\d+)?\S*|\d+\.\d+\.\d+\.\d+\S*|[\w-]+\.\w{2,}\S*)/i,
   );
   const wantsBrowser = /\b(browser|browse|preview|anteprima|web|pagina|finestra browser)\b/i.test(lower);
+  const wantsPreviewDock = /\b(preview|anteprima|dock)\b/i.test(lower) && !/\b(browser|finestra browser)\b/i.test(lower);
+  if (urlMatch && wantsPreviewDock) {
+    const url = normalizeBrowserUrl(urlMatch[1]);
+    useCanvasStore.getState().openPreview(url);
+    useCanvasStore.getState().pushCanvasActivity(`Opened preview ${url}`);
+    return `Opened preview ${url}`;
+  }
+
   if (urlMatch && (wantsBrowser || /localhost|http|\./i.test(lower))) {
     const url = normalizeBrowserUrl(urlMatch[1]);
     spawnBrowserNode(url);
-    return `Opened preview ${url}`;
+    useCanvasStore.getState().pushCanvasActivity(`Opened browser ${url}`);
+    return `Opened browser ${url}`;
   }
 
   if (wantsBrowser && /\b(apri|apre|open|spawn|new|nuovo|nuova|crea|mostra)\b/i.test(lower)) {
     spawnBrowserNode();
+    useCanvasStore.getState().pushCanvasActivity("Opened browser preview");
     return "Opened browser preview";
   }
 
@@ -552,6 +625,7 @@ async function run(text: string): Promise<string | null> {
   // Global terminal management (no specific target needed)
   if (/\b(tile|arrange|layout|organize|tidy|griglia|organizza|riordina|sistema)\b/i.test(lower)) {
     tileTerminals();
+    useCanvasStore.getState().pushCanvasActivity("Arranged windows");
     return "Arranged windows";
   }
   if (/\b(kill all|close all|stop all|chiudi tutto|ferma tutto)\b/i.test(lower)) {
@@ -605,6 +679,7 @@ async function run(text: string): Promise<string | null> {
     }
 
     sidecar.writeTerminal(termId, `${prompt}\r`);
+    useCanvasStore.getState().pushCanvasActivity(`Sent to ${runtime.title || runtime.kind}: ${prompt.slice(0, 80)}`);
     return `Sent to ${runtime.title || runtime.kind}: ${prompt}`;
   }
 

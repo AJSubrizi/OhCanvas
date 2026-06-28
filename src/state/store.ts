@@ -73,6 +73,12 @@ export interface PreviewSuggestion {
   url: string;
 }
 
+export interface CanvasActivity {
+  id: string;
+  text: string;
+  at: number;
+}
+
 export const WORKSPACE_COLORS = [
   "#7c9cff", // blu
   "#67e8f9", // ciano
@@ -133,6 +139,7 @@ interface CanvasStore {
   voiceStatus: string;
   voiceMessage: string;
   lastCanvasAction: string | null;
+  canvasActivity: CanvasActivity[];
 
   /** Workspace management (Ubuntu-style virtual desktops) */
   workspaces: Workspace[];
@@ -163,6 +170,7 @@ interface CanvasStore {
   setVoicePartial: (text: string) => void;
   setVoiceStatus: (state: string, message?: string) => void;
   setLastCanvasAction: (action: string | null) => void;
+  pushCanvasActivity: (text: string) => void;
   // Workspace actions
   loadWorkspaceState: (wsId: string) => Promise<void>;
   // Preview dock
@@ -245,6 +253,7 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
   voiceStatus: "",
   voiceMessage: "",
   lastCanvasAction: null,
+  canvasActivity: [],
   workspaces: [{ id: "ws-1", label: "1", color: WORKSPACE_COLORS[0] }],
   activeWorkspaceId: "ws-1",
   previewOpen: false,
@@ -273,6 +282,11 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
   setVoicePartial: (text) => set({ voicePartial: text }),
   setVoiceStatus: (state, message) => set({ voiceStatus: state, voiceMessage: message ?? "" }),
   setLastCanvasAction: (action: string | null) => set({ lastCanvasAction: action }),
+  pushCanvasActivity: (text) =>
+    set((s) => ({
+      lastCanvasAction: text,
+      canvasActivity: [{ id: uid(), text, at: Date.now() }, ...s.canvasActivity].slice(0, 8),
+    })),
 
   // --- Workspace actions ---
   loadWorkspaceState: async (wsId: string) => {

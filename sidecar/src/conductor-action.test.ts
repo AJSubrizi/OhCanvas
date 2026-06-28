@@ -30,6 +30,25 @@ test("send_terminal resolves by name and appends enter", () => {
   );
 
   assert.equal(summary, "Send to Claude");
-  assert.deepEqual(sent, []);
+  assert.deepEqual(sent, [{ type: "canvas_activity", text: "Sent to Claude: pnpm test" }]);
   assert.deepEqual(writes, [{ terminalId: "term_claude_1", input: "pnpm test\r" }]);
+});
+
+test("broadcast_terminal sends to live terminal nodes only", () => {
+  const sent: ServerMsg[] = [];
+  const writes: Array<{ terminalId: string; input: string }> = [];
+
+  const summary = runCanvasAction(
+    { action: "broadcast_terminal", input: "status", excludeTerminalId: "term_codex_1" },
+    {
+      send: (msg) => sent.push(msg),
+      getCanvasState: () => nodes,
+      runShell: () => "shell_1",
+      writeTerminal: (terminalId, input) => writes.push({ terminalId, input }),
+    },
+  );
+
+  assert.equal(summary, "Broadcast to 1 terminal");
+  assert.deepEqual(writes, [{ terminalId: "term_claude_1", input: "status\r" }]);
+  assert.deepEqual(sent, [{ type: "canvas_activity", text: "Broadcast to 1 terminal" }]);
 });

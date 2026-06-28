@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import os from "node:os";
 import type { AgentType, CanvasNodeInfo, ServerMsg } from "./protocol.ts";
 import { parseCanvasActionLine, type CanvasCliAction } from "./canvas-actions.ts";
-import { findTerminalByName } from "./conductor-action.ts";
+import { runCanvasAction } from "./conductor-action.ts";
 
 /**
  * Best-effort adapter for CLI coding agents. Each prompt runs the CLI in a
@@ -53,7 +53,11 @@ function withCanvasContext(message: string, cwd: string, nodes: CanvasNodeInfo[]
     'OHCANVAS {"action":"send_terminal","name":"Vale","input":"refactor the hero section"}',
     'OHCANVAS {"action":"run_shell","command":"pnpm dev"}',
     'OHCANVAS {"action":"open_browser","url":"http://localhost:3000"}',
+    'OHCANVAS {"action":"open_preview","url":"http://localhost:3000"}',
     'OHCANVAS {"action":"spawn_agent","agentType":"pi","name":"Wren","task":"write tests","cwd":"/path/to/project"}',
+    'OHCANVAS {"action":"broadcast_terminal","input":"run pnpm test"}',
+    'OHCANVAS {"action":"tile_windows"}',
+    'OHCANVAS {"action":"close_browsers"}',
     'OHCANVAS {"action":"add_note","text":"Next: polish the hero section"}',
     'OHCANVAS {"action":"kill_terminal","terminalId":"term_xxx"}',
     "Prefer send_terminal to delegate to an existing named agent. Do not wrap OHCANVAS lines in markdown fences.",
@@ -190,104 +194,14 @@ export class ExternalRunner {
   }
 
   private executeCanvasAction(action: CanvasCliAction): void {
-    switch (action.action) {
-      case "open_browser":
-        this.deps.send({ type: "canvas_spawn_browser", url: action.url, title: action.title });
-        this.deps.send({
-          type: "agent_tool",
-          agentId: this.agentId,
-          phase: "start",
-          toolName: "canvas.open_browser",
-          summary: action.url,
-        });
-        return;
-      case "run_shell": {
-        const shellId = this.deps.runShell(action.command, action.cwd);
-        this.deps.send({
-          type: "agent_tool",
-          agentId: this.agentId,
-          phase: "start",
-          toolName: "canvas.run_shell",
-          summary: `${shellId} ${action.command}`.slice(0, 120),
-        });
-        return;
-      }
-      case "spawn_agent":
-        this.deps.send({
-          type: "canvas_spawn_agent",
-          agentType: action.agentType,
-          name: action.name,
-          task: action.task,
-          cwd: action.cwd,
-        });
-        this.deps.send({
-          type: "agent_tool",
-          agentId: this.agentId,
-          phase: "start",
-          toolName: "canvas.spawn_agent",
-          summary: action.name ?? action.agentType ?? "agent",
-        });
-        return;
-      case "add_note":
-        this.deps.send({ type: "canvas_add_note", text: action.text, x: action.x, y: action.y });
-        return;
-      case "add_text":
-        this.deps.send({ type: "canvas_add_text", text: action.text, x: action.x, y: action.y });
-        return;
-      case "add_shape":
-        this.deps.send({
-          type: "canvas_add_shape",
-          shape: action.shape,
-          label: action.label,
-          x: action.x,
-          y: action.y,
-        });
-        return;
-      case "kill_terminal":
-        this.deps.killTerminal?.(action.terminalId);
-        this.deps.send({
-          type: "agent_tool",
-          agentId: this.agentId,
-          phase: "start",
-          toolName: "canvas.kill_terminal",
-          summary: action.terminalId,
-        });
-        return;
-      case "focus_terminal":
-        // Frontend can listen for this if we emit a special msg, for now just tool log
-        this.deps.send({
-          type: "agent_tool",
-          agentId: this.agentId,
-          phase: "start",
-          toolName: "canvas.focus_terminal",
-          summary: action.terminalId,
-        });
-        return;
-      case "send_terminal": {
-        let terminalId = action.terminalId;
-        if (!terminalId && action.name) {
-          const match = findTerminalByName(this.deps.getCanvasState(), action.name);
-          terminalId = match?.id;
-        }
-        if (!terminalId) {
-          this.deps.send({
-            type: "agent_error",
-            agentId: this.agentId,
-            message: `No terminal named "${action.name ?? action.terminalId}" on the canvas.`,
-          });
-          return;
-        }
-        this.deps.writeTerminal?.(terminalId, action.input);
-        this.deps.send({
-          type: "agent_tool",
-          agentId: this.agentId,
-          phase: "start",
-          toolName: "canvas.send_terminal",
-          summary: `${action.name ?? terminalId}: ${action.input}`.slice(0, 120),
-        });
-        return;
-      }
-    }
+    const summary = runCanvasAction(action, this.deps, this.agentId);
+    this.deps.send({
+      type: "agent_tool",
+      agentId: this.agentId,
+      phase: "start",
+      toolName: `canvas.${action.action}`,
+      summary: summary.slice(0, 120),
+    });
   }
 
   private fail(msg: string): void {

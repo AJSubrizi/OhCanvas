@@ -79,3 +79,32 @@ test("rejects kill_terminal without id", () => {
   const parsed = parseCanvasActionLine('OHCANVAS {"action":"kill_terminal"}');
   assert.equal(parsed.kind, "invalid");
 });
+
+test("parses broadcast_terminal with kind filter", () => {
+  assert.deepEqual(parseCanvasActionLine('OHCANVAS {"action":"broadcast_terminal","input":"run tests","kind":"cursor"}'), {
+    kind: "action",
+    action: { action: "broadcast_terminal", input: "run tests", kind: "cursor", excludeTerminalId: undefined },
+  });
+});
+
+test("parses window control actions", () => {
+  assert.deepEqual(parseCanvasActionLine('OHCANVAS {"action":"tile_windows"}'), {
+    kind: "action",
+    action: { action: "tile_windows" },
+  });
+  assert.deepEqual(parseCanvasActionLine('OHCANVAS {"action":"close_browsers"}'), {
+    kind: "action",
+    action: { action: "close_browsers" },
+  });
+  assert.deepEqual(parseCanvasActionLine('OHCANVAS {"action":"close_terminals","exceptName":"Codex"}'), {
+    kind: "action",
+    action: { action: "close_terminals", exceptName: "Codex", exceptTerminalId: undefined },
+  });
+});
+
+test("parses open_preview action", () => {
+  assert.deepEqual(parseCanvasActionLine('OHCANVAS {"action":"open_preview","url":"http://localhost:5173"}'), {
+    kind: "action",
+    action: { action: "open_preview", url: "http://localhost:5173", terminalId: undefined },
+  });
+});

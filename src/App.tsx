@@ -140,6 +140,7 @@ export default function App() {
 
       {/* Simple floating inspector for selected node */}
       <SelectedInspector />
+      <ActivityFeed />
     </div>
   );
 }
@@ -185,6 +186,20 @@ function SelectedInspector() {
         </div>
       )}
       <div style={{ fontSize: 10, opacity: 0.6, marginTop: 4 }}>Agents can control the canvas via OHCANVAS</div>
+    </div>
+  );
+}
+
+function ActivityFeed() {
+  const items = useCanvasStore((s) => s.canvasActivity.slice(0, 4));
+  if (items.length === 0) return null;
+  return (
+    <div className="activity-feed" aria-label="Recent canvas activity">
+      {items.map((item) => (
+        <div key={item.id} className="activity-feed__item">
+          {item.text}
+        </div>
+      ))}
     </div>
   );
 }
