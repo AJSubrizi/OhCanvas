@@ -96,6 +96,9 @@ export interface Workspace {
   id: string;
   label: string;
   color: string;
+  folderName?: string;
+  folderPath?: string | null;
+  remoteUrl?: string;
 }
 
 // Disk-side keys. The persistence adapter prefixes these with "ohcanvas:"
@@ -104,11 +107,102 @@ export interface Workspace {
 // upgrading to the file backend reads existing data without a manual
 // migration step (the adapter handles it on first read).
 const CANVAS_STORAGE_KEY = 'v1';
+const WORKSPACES_STORAGE_KEY = "ohcanvas:workspaces";
+const GLOBAL_MEDIA_KEY = "ohcanvas:global-media";
+const GLOBAL_SETTINGS_KEY = "ohcanvas:global-settings";
 
 const workspaceKey = (wsId: string) => `${CANVAS_STORAGE_KEY}:${wsId}`;
 
 const DEFAULT_SPOTIFY_EMBED_URL =
   "https://open.spotify.com/embed/playlist/37i9dQZF1DWZeKCadgRdKQ?utm_source=generator&theme=0";
+
+function defaultWorkspaces(): Workspace[] {
+  return [{ id: "ws-1", label: "1", color: WORKSPACE_COLORS[0] }];
+}
+
+function loadWorkspaces(): Workspace[] {
+  try {
+    const raw = localStorage.getItem(WORKSPACES_STORAGE_KEY);
+    if (!raw) return defaultWorkspaces();
+    const parsed = JSON.parse(raw) as Workspace[];
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : defaultWorkspaces();
+  } catch {
+    return defaultWorkspaces();
+  }
+}
+
+function persistWorkspaces(workspaces: Workspace[]) {
+  try {
+    localStorage.setItem(WORKSPACES_STORAGE_KEY, JSON.stringify(workspaces));
+  } catch {
+    /* ignore */
+  }
+}
+
+function loadGlobalMedia() {
+  try {
+    const raw = localStorage.getItem(GLOBAL_MEDIA_KEY);
+    if (!raw) {
+      return {
+        spotifyEmbedUrl: DEFAULT_SPOTIFY_EMBED_URL,
+        spotifyPlayerOpen: false,
+        spotifyPosition: null as DockPosition | null,
+      };
+    }
+    const parsed = JSON.parse(raw) as Partial<{
+      spotifyEmbedUrl: string | null;
+      spotifyPlayerOpen: boolean;
+      spotifyPosition: DockPosition | null;
+    }>;
+    return {
+      spotifyEmbedUrl:
+        typeof parsed.spotifyEmbedUrl === "string" || parsed.spotifyEmbedUrl === null
+          ? parsed.spotifyEmbedUrl
+          : DEFAULT_SPOTIFY_EMBED_URL,
+      spotifyPlayerOpen: typeof parsed.spotifyPlayerOpen === "boolean" ? parsed.spotifyPlayerOpen : false,
+      spotifyPosition:
+        typeof parsed.spotifyPosition?.x === "number" && typeof parsed.spotifyPosition?.y === "number"
+          ? parsed.spotifyPosition
+          : null,
+    };
+  } catch {
+    return {
+      spotifyEmbedUrl: DEFAULT_SPOTIFY_EMBED_URL,
+      spotifyPlayerOpen: false,
+      spotifyPosition: null as DockPosition | null,
+    };
+  }
+}
+
+function persistGlobalMedia(media: {
+  spotifyEmbedUrl: string | null;
+  spotifyPlayerOpen: boolean;
+  spotifyPosition: DockPosition | null;
+}) {
+  try {
+    localStorage.setItem(GLOBAL_MEDIA_KEY, JSON.stringify(media));
+  } catch {
+    /* ignore */
+  }
+}
+
+function loadGlobalSettings() {
+  try {
+    const raw = localStorage.getItem(GLOBAL_SETTINGS_KEY);
+    const parsed = raw ? JSON.parse(raw) as Partial<{ multiFolderSameProject: boolean }> : {};
+    return { multiFolderSameProject: parsed.multiFolderSameProject === true };
+  } catch {
+    return { multiFolderSameProject: false };
+  }
+}
+
+function persistGlobalSettings(settings: { multiFolderSameProject: boolean }) {
+  try {
+    localStorage.setItem(GLOBAL_SETTINGS_KEY, JSON.stringify(settings));
+  } catch {
+    /* ignore */
+  }
+}
 
 interface CanvasStore {
   /** sidecar connection state, surfaced in the navbar */
@@ -129,6 +223,7 @@ interface CanvasStore {
   spotifyEmbedUrl: string | null;
   spotifyPlayerOpen: boolean;
   spotifyPosition: DockPosition | null;
+  multiFolderSameProject: boolean;
   /** auto-tile terminals side-by-side as they open/close */
   autoArrange: boolean;
   /** active theme id (accent + backdrop) */
@@ -145,7 +240,7 @@ interface CanvasStore {
   workspaces: Workspace[];
   activeWorkspaceId: string;
 
-  addWorkspace: () => void;
+  addWorkspace: (folder?: { name: string; path: string | null } | null) => void;
   removeWorkspace: (id: string) => void;
   switchWorkspace: (id: string) => void;
 
@@ -164,6 +259,9 @@ interface CanvasStore {
   setSpotifyEmbedUrl: (url: string | null) => void;
   setSpotifyPlayerOpen: (open: boolean) => void;
   setSpotifyPosition: (position: DockPosition | null) => void;
+  setMultiFolderSameProject: (enabled: boolean) => void;
+  setActiveWorkspaceFolder: (folder: { name: string; path: string | null } | null) => void;
+  setActiveWorkspaceRemoteUrl: (url: string) => void;
   setAutoArrange: (v: boolean) => void;
   setThemeId: (id: string) => void;
   setVoiceListening: (v: boolean) => void;
@@ -225,6 +323,7 @@ interface CanvasStore {
 
 const empty = (): AgentRuntime => ({ status: "idle", lines: [] });
 const uid = () => Math.random().toString(36).slice(2, 9);
+const INITIAL_WORKSPACES = loadWorkspaces();
 
 export const useCanvasStore = create<CanvasStore>((set) => ({
   connected: false,
@@ -237,9 +336,10 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
   tool: "select",
   backgroundImage: null,
   backgroundVideo: DEFAULT_BACKGROUND_VIDEO,
-  spotifyEmbedUrl: DEFAULT_SPOTIFY_EMBED_URL,
-  spotifyPlayerOpen: false,
-  spotifyPosition: null,
+  spotifyEmbedUrl: loadGlobalMedia().spotifyEmbedUrl,
+  spotifyPlayerOpen: loadGlobalMedia().spotifyPlayerOpen,
+  spotifyPosition: loadGlobalMedia().spotifyPosition,
+  multiFolderSameProject: loadGlobalSettings().multiFolderSameProject,
   autoArrange: true,
   themeId: (() => {
     try {
@@ -254,8 +354,8 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
   voiceMessage: "",
   lastCanvasAction: null,
   canvasActivity: [],
-  workspaces: [{ id: "ws-1", label: "1", color: WORKSPACE_COLORS[0] }],
-  activeWorkspaceId: "ws-1",
+  workspaces: INITIAL_WORKSPACES,
+  activeWorkspaceId: INITIAL_WORKSPACES[0]?.id ?? "ws-1",
   previewOpen: false,
   previewUrl: "",
   previewTerminalId: null,
@@ -266,9 +366,44 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
   setTool: (tool) => set({ tool }),
   setBackgroundImage: (image) => set({ backgroundImage: image }),
   setBackgroundVideo: (video) => set({ backgroundVideo: video }),
-  setSpotifyEmbedUrl: (url) => set({ spotifyEmbedUrl: url }),
-  setSpotifyPlayerOpen: (open) => set({ spotifyPlayerOpen: open }),
-  setSpotifyPosition: (position) => set({ spotifyPosition: position }),
+  setSpotifyEmbedUrl: (url) =>
+    set((s) => {
+      persistGlobalMedia({ spotifyEmbedUrl: url, spotifyPlayerOpen: s.spotifyPlayerOpen, spotifyPosition: s.spotifyPosition });
+      return { spotifyEmbedUrl: url };
+    }),
+  setSpotifyPlayerOpen: (open) =>
+    set((s) => {
+      persistGlobalMedia({ spotifyEmbedUrl: s.spotifyEmbedUrl, spotifyPlayerOpen: open, spotifyPosition: s.spotifyPosition });
+      return { spotifyPlayerOpen: open };
+    }),
+  setSpotifyPosition: (position) =>
+    set((s) => {
+      persistGlobalMedia({ spotifyEmbedUrl: s.spotifyEmbedUrl, spotifyPlayerOpen: s.spotifyPlayerOpen, spotifyPosition: position });
+      return { spotifyPosition: position };
+    }),
+  setMultiFolderSameProject: (enabled) => {
+    persistGlobalSettings({ multiFolderSameProject: enabled });
+    set({ multiFolderSameProject: enabled });
+  },
+  setActiveWorkspaceFolder: (folder) =>
+    set((s) => {
+      const workspaces = s.workspaces.map((ws) =>
+        ws.id === s.activeWorkspaceId
+          ? { ...ws, folderName: folder?.name, folderPath: folder?.path ?? null }
+          : ws,
+      );
+      persistWorkspaces(workspaces);
+      return { workspaces };
+    }),
+  setActiveWorkspaceRemoteUrl: (url) =>
+    set((s) => {
+      const clean = url.trim();
+      const workspaces = s.workspaces.map((ws) =>
+        ws.id === s.activeWorkspaceId ? { ...ws, remoteUrl: clean || undefined } : ws,
+      );
+      persistWorkspaces(workspaces);
+      return { workspaces };
+    }),
   setAutoArrange: (v) => set({ autoArrange: v }),
   setThemeId: (id) => {
     try {
@@ -320,9 +455,6 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
         backgroundImage: hasVideo ? null : typeof data.backgroundImage === "string" ? data.backgroundImage : null,
         backgroundVideo: restoredVideo,
         autoArrange: typeof data.settings?.autoArrange === "boolean" ? data.settings.autoArrange : true,
-        spotifyEmbedUrl: typeof data.settings?.spotifyEmbedUrl === "string" ? data.settings.spotifyEmbedUrl : DEFAULT_SPOTIFY_EMBED_URL,
-        spotifyPlayerOpen: typeof data.settings?.spotifyPlayerOpen === "boolean" ? data.settings.spotifyPlayerOpen : false,
-        spotifyPosition: typeof data.settings?.spotifyPosition?.x === "number" ? data.settings.spotifyPosition : null,
         previewOpen: typeof data.preview?.open === "boolean" ? data.preview.open : false,
         previewUrl: typeof data.preview?.url === "string" ? data.preview.url : "",
         previewTerminalId: typeof data.preview?.terminalId === "string" ? data.preview.terminalId : null,
@@ -341,7 +473,7 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
       console.warn(`[canvas] load workspace ${wsId} failed`, e);
     }
   },
-  addWorkspace: () =>
+  addWorkspace: (folder?: { name: string; path: string | null } | null) =>
     set((s) => {
       // Save current workspace state first
       const snapshot = {
@@ -351,18 +483,26 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
         boardMarks: s.boardMarks,
         backgroundImage: s.backgroundImage,
         backgroundVideo: s.backgroundVideo,
-        settings: { autoArrange: s.autoArrange, spotifyEmbedUrl: s.spotifyEmbedUrl, spotifyPlayerOpen: s.spotifyPlayerOpen, spotifyPosition: s.spotifyPosition },
+        settings: { autoArrange: s.autoArrange },
         preview: { open: s.previewOpen, url: s.previewUrl, terminalId: s.previewTerminalId, device: s.previewDevice },
         terminals: s.terminals,
       };
       persistence().write(workspaceKey(s.activeWorkspaceId), JSON.stringify(snapshot));
-      const nextIdx = s.workspaces.length + 1;
+      const nextIdx = Math.max(0, ...s.workspaces.map((ws) => Number.parseInt(ws.label, 10)).filter(Number.isFinite)) + 1;
       const color = WORKSPACE_COLORS[(nextIdx - 1) % WORKSPACE_COLORS.length];
-      const newWs: Workspace = { id: `ws-${nextIdx}`, label: String(nextIdx), color };
+      const newWs: Workspace = {
+        id: `ws-${nextIdx}`,
+        label: String(nextIdx),
+        color,
+        folderName: folder?.name,
+        folderPath: folder?.path ?? null,
+      };
+      const workspaces = [...s.workspaces, newWs];
+      persistWorkspaces(workspaces);
       // Assign a different animated background for each workspace, cycling through available ones
       const bgIndex = (nextIdx - 1) % BACKGROUND_VIDEOS.length;
       return {
-        workspaces: [...s.workspaces, newWs],
+        workspaces,
         activeWorkspaceId: newWs.id,
         backgroundImage: null,
         backgroundVideo: BACKGROUND_VIDEOS[bgIndex].file,
@@ -374,6 +514,7 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
       const remaining = s.workspaces.filter((ws) => ws.id !== id);
       const wasActive = s.activeWorkspaceId === id;
       persistence().remove(workspaceKey(id));
+      persistWorkspaces(remaining);
       const nextActiveId = wasActive ? remaining[remaining.length - 1].id : s.activeWorkspaceId;
       // If removing the active workspace, load the next one
       if (wasActive) {
@@ -398,9 +539,6 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
         backgroundVideo: s.backgroundVideo,
         settings: {
           autoArrange: s.autoArrange,
-          spotifyEmbedUrl: s.spotifyEmbedUrl,
-          spotifyPlayerOpen: s.spotifyPlayerOpen,
-          spotifyPosition: s.spotifyPosition,
         },
         preview: {
           open: s.previewOpen,
@@ -608,9 +746,6 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
         backgroundVideo: state.backgroundVideo,
         settings: {
           autoArrange: state.autoArrange,
-          spotifyEmbedUrl: state.spotifyEmbedUrl,
-          spotifyPlayerOpen: state.spotifyPlayerOpen,
-          spotifyPosition: state.spotifyPosition,
         },
         preview: {
           open: state.previewOpen,
@@ -690,16 +825,6 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
           : null,
         backgroundVideo: restoredVideo,
         autoArrange: typeof data.settings?.autoArrange === "boolean" ? data.settings.autoArrange : true,
-        spotifyEmbedUrl:
-          typeof data.settings?.spotifyEmbedUrl === "string"
-            ? data.settings.spotifyEmbedUrl
-            : DEFAULT_SPOTIFY_EMBED_URL,
-        spotifyPlayerOpen: typeof data.settings?.spotifyPlayerOpen === "boolean" ? data.settings.spotifyPlayerOpen : false,
-        spotifyPosition:
-          typeof data.settings?.spotifyPosition?.x === "number" &&
-          typeof data.settings?.spotifyPosition?.y === "number"
-            ? data.settings.spotifyPosition
-            : null,
         previewOpen: typeof data.preview?.open === "boolean" ? data.preview.open : false,
         previewUrl: typeof data.preview?.url === "string" ? data.preview.url : "",
         previewTerminalId:

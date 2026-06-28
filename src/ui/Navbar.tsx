@@ -5,7 +5,7 @@ import { tileTerminals, nextAgentName, spawnBrowserNode, spawnNoteNode } from ".
 import { sidecar } from "../bridge/sidecar";
 import { CLI_OPTIONS } from "./cliOptions";
 import type { CliKind } from "./cliOptions";
-import { pickFolder } from "./workspacePicker";
+import { chooseWorkspaceProject, resolveTerminalFolder } from "./projectFolders";
 import { THEMES } from "./themes";
 import { BACKGROUND_VIDEOS, backgroundVideoUrl, DEFAULT_BACKGROUND_VIDEO } from "./backgrounds";
 import { normalizeMediaEmbedUrl } from "./mediaProviders";
@@ -25,6 +25,13 @@ import WorkspaceSwitcher from "./WorkspaceSwitcher";
 
 // TODO: point this at the real repo once it's published.
 const GITHUB_REPO_URL = "https://github.com/AJSubrizi/OhCanvas";
+
+function normalizeRemoteUrl(url: string) {
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
 
 export default function Navbar() {
   const [cliOpen, setCliOpen] = useState(false);
@@ -55,6 +62,12 @@ export default function Navbar() {
   const spotifyPlayerOpen = useCanvasStore((s) => s.spotifyPlayerOpen);
   const setSpotifyEmbedUrl = useCanvasStore((s) => s.setSpotifyEmbedUrl);
   const setSpotifyPlayerOpen = useCanvasStore((s) => s.setSpotifyPlayerOpen);
+  const workspaces = useCanvasStore((s) => s.workspaces);
+  const activeWorkspaceId = useCanvasStore((s) => s.activeWorkspaceId);
+  const multiFolderSameProject = useCanvasStore((s) => s.multiFolderSameProject);
+  const setMultiFolderSameProject = useCanvasStore((s) => s.setMultiFolderSameProject);
+  const setActiveWorkspaceRemoteUrl = useCanvasStore((s) => s.setActiveWorkspaceRemoteUrl);
+  const activeWorkspace = workspaces.find((ws) => ws.id === activeWorkspaceId) ?? workspaces[0];
 
   const [updateState, setUpdateState] = useState<"idle" | "checking" | "available" | "downloading" | "ready" | "error">("idle");
   const [updateError, setUpdateError] = useState("");
@@ -120,7 +133,7 @@ export default function Navbar() {
   }, [settingsOpen]);
 
   const openCli = async (kind: CliKind) => {
-    const folder = await pickFolder();
+    const folder = await resolveTerminalFolder();
     if (!folder) return;
     const label = CLI_OPTIONS.find((option) => option.kind === kind)?.label ?? kind;
     sidecar.startTerminal({
@@ -168,7 +181,7 @@ export default function Navbar() {
       return;
     }
     if (id === "shell") {
-      const folder = await pickFolder();
+      const folder = await resolveTerminalFolder();
       if (folder) {
         sidecar.startTerminal({
           kind: "shell",
@@ -216,6 +229,15 @@ export default function Navbar() {
     <>
       <div className="navbar" aria-label="Canvas actions">
         <WorkspaceSwitcher />
+        <button
+          className="navbar__project"
+          data-tauri-drag-region="false"
+          title={activeWorkspace?.folderPath || "Choose project folder"}
+          onClick={() => void chooseWorkspaceProject()}
+        >
+          <span className="navbar__project-dot" />
+          <span>{activeWorkspace?.folderName ?? "Project"}</span>
+        </button>
 
         {/* Merged tools from old left sidebar */}
         <div className="navbar__tools">
@@ -370,6 +392,36 @@ export default function Navbar() {
               onChange={(event) => setAutoArrange(event.target.checked)}
             />
             <span>Auto arrange terminals</span>
+          </label>
+          <div className="sidebar-settings__label">Project</div>
+          <button className="sidebar-settings__action" onClick={() => void chooseWorkspaceProject()}>
+            {activeWorkspace?.folderName ? `Folder: ${activeWorkspace.folderName}` : "Choose workspace folder"}
+          </button>
+          {activeWorkspace?.folderPath && (
+            <div className="sidebar-settings__hint" title={activeWorkspace.folderPath}>
+              {activeWorkspace.folderPath}
+            </div>
+          )}
+          <input
+            className="sidebar-settings__input"
+            value={activeWorkspace?.remoteUrl ?? ""}
+            placeholder="Remote server URL"
+            onChange={(event) => setActiveWorkspaceRemoteUrl(event.target.value)}
+          />
+          <button
+            className="sidebar-settings__action"
+            disabled={!activeWorkspace?.remoteUrl}
+            onClick={() => activeWorkspace?.remoteUrl && useCanvasStore.getState().openPreview(normalizeRemoteUrl(activeWorkspace.remoteUrl))}
+          >
+            Open remote preview
+          </button>
+          <label className="sidebar-settings__toggle">
+            <input
+              type="checkbox"
+              checked={multiFolderSameProject}
+              onChange={(event) => setMultiFolderSameProject(event.target.checked)}
+            />
+            <span>Multi-folder on same project</span>
           </label>
           <div className="sidebar-settings__label">Media</div>
           <input

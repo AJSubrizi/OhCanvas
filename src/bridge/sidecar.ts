@@ -19,6 +19,7 @@ import {
   nextAgentName,
 } from "../canvas/nodes";
 import { llmComplete, llmSupported } from "../ui/llm";
+import { activeWorkspaceProject } from "../ui/projectFolders";
 
 type TerminalOutputListener = (chunk: string) => void;
 type SpotifyAuthListener = (payload: { code: string; state: string }) => void;
@@ -140,7 +141,7 @@ class SidecarClient {
         this.startTerminal({
           kind: msg.agentType ?? "pi",
           title: msg.name,
-          cwd: msg.cwd,
+          cwd: msg.cwd ?? activeWorkspaceProject()?.path ?? undefined,
           initialInput: msg.task,
         });
         useCanvasStore.getState().pushCanvasActivity(`Opened ${msg.name ?? msg.agentType ?? "agent"}`);

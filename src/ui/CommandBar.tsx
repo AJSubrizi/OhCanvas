@@ -11,6 +11,7 @@ import { sidecar } from "../bridge/sidecar";
 import { useCanvasStore } from "../state/store";
 import { labelForCli, parseCliKind } from "./cliOptions";
 import { pickFolder } from "./workspacePicker";
+import { activeWorkspaceProject, resolveTerminalFolder } from "./projectFolders";
 import { onVoiceFinal, startVoice, stopVoice, voiceSupported } from "./voice";
 import { CONDUCTOR_ID, type TerminalKind } from "../bridge/protocol";
 
@@ -131,13 +132,14 @@ async function tryMultiSpawn(text: string, ctx: FolderCtx): Promise<string | nul
       for (let i = 0; i < n; i += 1) spawnBrowserNode();
       return `Opened ${n} browser preview${n === 1 ? "" : "s"}`;
     }
-    const folder = parseFolder(text, ctx);
+    const folder = parseFolder(text, ctx) ?? activeWorkspaceProject() ?? await resolveTerminalFolder();
+    if (!folder) return "Folder cancelled";
     const kind = cliKindForNoun(noun);
     const label = labelForCli(kind);
     for (let i = 0; i < n; i += 1) {
       sidecar.startTerminal({
         kind,
-        cwd: folder?.path,
+        cwd: folder.path ?? undefined,
         title: folder?.name ? `${label} · ${folder.name}` : undefined,
       });
     }
@@ -151,7 +153,8 @@ async function tryMultiSpawn(text: string, ctx: FolderCtx): Promise<string | nul
   const hasOpenVerb = /\b(open|apri|apre|spawn|launch|crea|avvia|start|new|nuov[oa]|lancia)\b/i.test(lower);
   const hasSeparator = /(?:\s(?:e|and|poi|then|plus|più)\s|,|&|\+)/i.test(lower);
   if (names.length >= 2 && hasOpenVerb && hasSeparator) {
-    const folder = parseFolder(text, ctx);
+    const folder = parseFolder(text, ctx) ?? activeWorkspaceProject() ?? await resolveTerminalFolder();
+    if (!folder) return "Folder cancelled";
     const segments = text.split(/\s*(?:,|&|\+|\b(?:e|and|poi|then|plus|più)\b)\s*/i);
     const spawned: string[] = [];
     for (const seg of segments) {
@@ -160,7 +163,7 @@ async function tryMultiSpawn(text: string, ctx: FolderCtx): Promise<string | nul
       if (!resolved) continue;
       sidecar.startTerminal({
         kind: resolved,
-        cwd: folder?.path,
+        cwd: folder.path ?? undefined,
         title: folder?.name ? `${labelForCli(resolved)} · ${folder.name}` : undefined,
       });
       spawned.push(labelForCli(resolved));
@@ -324,19 +327,19 @@ function tryOrchestrateViaCli(text: string, terminals: TerminalMap, flowNodes: a
     return `Asked ${label} to coordinate the CLI team`;
   }
 
-  const folder = parseFolder(text, { terminals });
+  const folder = parseFolder(text, { terminals }) ?? activeWorkspaceProject();
   const terminalId = `${targetKind}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
   const runtime: TerminalRuntimeView = {
     kind: targetKind,
     title: label,
-    cwd: folder?.path,
+    cwd: folder?.path ?? undefined,
     running: true,
   };
   const prompt = buildCliOrchestrationPrompt(text, terminalId, runtime, terminals, flowNodes);
   sidecar.startTerminal({
     terminalId,
     kind: targetKind,
-    cwd: folder?.path,
+    cwd: folder?.path ?? undefined,
     title: folder?.name ? `${label} · ${folder.name}` : label,
     initialInput: prompt,
   });
@@ -458,6 +461,20 @@ async function run(text: string): Promise<string | null> {
     return count ? `Closed ${count} browser preview${count === 1 ? "" : "s"}` : "No browser previews to close";
   }
 
+  if (
+    /\b(remote|server|production|prod|remot[oa])\b/i.test(lower) &&
+    /\b(open|apri|preview|anteprima|mostra)\b/i.test(lower)
+  ) {
+    const state = useCanvasStore.getState();
+    const active = state.workspaces.find((ws) => ws.id === state.activeWorkspaceId);
+    const remoteUrl = active?.remoteUrl?.trim();
+    if (!remoteUrl) return "No remote server set for this workspace";
+    const normalized = /^https?:\/\//i.test(remoteUrl) ? remoteUrl : `https://${remoteUrl}`;
+    state.openPreview(normalized);
+    state.pushCanvasActivity(`Opened remote preview ${normalized}`);
+    return `Opened remote preview ${normalized}`;
+  }
+
   const urlMatch = t.match(
     /(?:open|apri|browse)\s+(?:to\s+)?(https?:\/\/\S+|localhost(?::\d+)?\S*|\d+\.\d+\.\d+\.\d+\S*|[\w-]+\.\w{2,}\S*)/i,
   );
@@ -502,6 +519,12 @@ async function run(text: string): Promise<string | null> {
         cwd = folder.path ?? undefined;
         folderLabel = folder.name;
       }
+      if (!cwd) {
+        const folder = await resolveTerminalFolder();
+        if (!folder) return "Folder cancelled";
+        cwd = folder.path ?? undefined;
+        folderLabel = folder.name;
+      }
       sidecar.startTerminal({
         kind: cliKind,
         cwd,
@@ -527,7 +550,7 @@ async function run(text: string): Promise<string | null> {
 
   const shellMatch = t.match(/^(?:run|shell|terminale)\s+(.+)/i);
   if (shellMatch) {
-    const folder = await pickFolder();
+    const folder = await resolveTerminalFolder();
     if (!folder) return "Folder cancelled";
     sidecar.startTerminal({
       kind: "shell",

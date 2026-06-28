@@ -46,13 +46,13 @@ export function getRecentFolders(): PickedWorkspace[] {
  * to the `<input webkitdirectory>` picker, which only yields the folder name.
  * Resolves null when the user cancels.
  */
-export async function pickFolder(): Promise<PickedWorkspace | null> {
+export async function pickFolder(title = "Choose a folder"): Promise<PickedWorkspace | null> {
   if (isTauri()) {
     try {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: "Choose a folder for this agent",
+        title,
       });
       if (typeof selected !== "string") return null; // cancelled
       const folder: PickedWorkspace = { name: basename(selected), path: selected };

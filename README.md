@@ -88,6 +88,7 @@ ohcanvas/
 | Action | How |
 |---|---|
 | **Add a terminal** | Click `+ CLI` in the navbar, pick an agent |
+| **Set project folder** | Click `Project` in the navbar; terminals in that workspace reuse it |
 | **Move / resize** | Drag a node, resize from its corners |
 | **Add a browser** | Click the 🌐 button in the navbar |
 | **Annotate a web page** | Click ✎ on the browser node, pick a tool (T / ↗ / ✎) |
@@ -95,8 +96,16 @@ ohcanvas/
 | **Erase drawings** | Select eraser in the navbar, brush over strokes |
 | **Take notes** | 📝 (note) and **T** (text) buttons |
 | **Switch workspaces** | Click the numbered squares left of the navbar |
+| **Close workspaces** | Hover workspace 2+ and click `×` |
 | **Quick command** | Type `/` in the command bar |
 | **Voice** | Click the 🎤 mic button in the command bar |
+
+Each workspace now owns one project folder. The first terminal in a blank
+workspace asks for that folder, and later terminals reuse it. Enable
+**Multi-folder on same project** in Settings only when every new CLI should ask
+for a different folder. The media player is global, so playback continues while
+switching workspaces. Settings also supports a per-workspace remote server URL
+that can be opened in the preview dock.
 
 ### OHCANVAS commands (from a CLI agent)
 
