@@ -7,8 +7,7 @@ import { CLI_OPTIONS } from "./cliOptions";
 import type { CliKind } from "./cliOptions";
 import { chooseWorkspaceProject, resolveTerminalFolder } from "./projectFolders";
 import { THEMES } from "./themes";
-import { BACKGROUND_VIDEOS, backgroundVideoUrl, DEFAULT_BACKGROUND_VIDEO } from "./backgrounds";
-import { normalizeMediaEmbedUrl } from "./mediaProviders";
+import { BACKGROUND_VIDEOS, backgroundVideoUrl } from "./backgrounds";
 import {
   BrowserIcon,
   ArrowIcon,
@@ -43,8 +42,6 @@ export default function Navbar() {
 
   // Settings (fused into navbar)
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [mediaDraft, setMediaDraft] = useState("");
-  const [mediaError, setMediaError] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
   const gearRef = useRef<HTMLButtonElement>(null);
@@ -58,15 +55,12 @@ export default function Navbar() {
   const setBoardDrawColor = useCanvasStore((s) => s.setBoardDrawColor);
   const themeId = useCanvasStore((s) => s.themeId);
   const setThemeId = useCanvasStore((s) => s.setThemeId);
-  const spotifyEmbedUrl = useCanvasStore((s) => s.spotifyEmbedUrl);
-  const spotifyPlayerOpen = useCanvasStore((s) => s.spotifyPlayerOpen);
-  const setSpotifyEmbedUrl = useCanvasStore((s) => s.setSpotifyEmbedUrl);
-  const setSpotifyPlayerOpen = useCanvasStore((s) => s.setSpotifyPlayerOpen);
   const workspaces = useCanvasStore((s) => s.workspaces);
   const activeWorkspaceId = useCanvasStore((s) => s.activeWorkspaceId);
   const multiFolderSameProject = useCanvasStore((s) => s.multiFolderSameProject);
   const setMultiFolderSameProject = useCanvasStore((s) => s.setMultiFolderSameProject);
   const setActiveWorkspaceRemoteUrl = useCanvasStore((s) => s.setActiveWorkspaceRemoteUrl);
+  const setActiveWorkspaceRemoteServer = useCanvasStore((s) => s.setActiveWorkspaceRemoteServer);
   const activeWorkspace = workspaces.find((ws) => ws.id === activeWorkspaceId) ?? workspaces[0];
 
   const [updateState, setUpdateState] = useState<"idle" | "checking" | "available" | "downloading" | "ready" | "error">("idle");
@@ -213,18 +207,6 @@ export default function Navbar() {
     reader.readAsDataURL(file);
   };
 
-  const saveMedia = () => {
-    const normalized = normalizeMediaEmbedUrl(mediaDraft || spotifyEmbedUrl || "");
-    if (!normalized) {
-      setMediaError(true);
-      return;
-    }
-    setSpotifyEmbedUrl(normalized);
-    setSpotifyPlayerOpen(true);
-    setMediaDraft("");
-    setMediaError(false);
-  };
-
   return (
     <>
       <div className="navbar" aria-label="Canvas actions">
@@ -327,17 +309,6 @@ export default function Navbar() {
           <button className="sidebar-settings__action" onClick={() => fileRef.current?.click()}>
             Change background
           </button>
-          <button
-            className="sidebar-settings__action"
-            onClick={() => {
-              setBackgroundImage(null);
-              if (!backgroundVideo) {
-                setBackgroundVideo(DEFAULT_BACKGROUND_VIDEO);
-              }
-            }}
-          >
-            Reset background
-          </button>
           <div className="sidebar-settings__label">Animated background</div>
           <div className="bg-picker">
             {BACKGROUND_VIDEOS.map((v) => (
@@ -402,18 +373,45 @@ export default function Navbar() {
               {activeWorkspace.folderPath}
             </div>
           )}
+          <div className="sidebar-settings__label">Production / VPS</div>
           <input
             className="sidebar-settings__input"
             value={activeWorkspace?.remoteUrl ?? ""}
-            placeholder="Remote server URL"
+            placeholder="Production URL, e.g. app.com"
             onChange={(event) => setActiveWorkspaceRemoteUrl(event.target.value)}
           />
+          <div className="sidebar-settings__grid">
+            <input
+              className="sidebar-settings__input"
+              value={activeWorkspace?.remoteUser ?? ""}
+              placeholder="SSH user"
+              onChange={(event) => setActiveWorkspaceRemoteServer({ remoteUser: event.target.value })}
+            />
+            <input
+              className="sidebar-settings__input"
+              value={activeWorkspace?.remoteHost ?? ""}
+              placeholder="VPS host/IP"
+              onChange={(event) => setActiveWorkspaceRemoteServer({ remoteHost: event.target.value })}
+            />
+          </div>
+          <input
+            className="sidebar-settings__input"
+            value={activeWorkspace?.remotePath ?? ""}
+            placeholder="Remote project path, e.g. /var/www/app"
+            onChange={(event) => setActiveWorkspaceRemoteServer({ remotePath: event.target.value })}
+          />
+          {activeWorkspace?.remoteHost && (
+            <div className="sidebar-settings__hint">
+              ssh {activeWorkspace.remoteUser ? `${activeWorkspace.remoteUser}@` : ""}{activeWorkspace.remoteHost}
+              {activeWorkspace.remotePath ? ` · ${activeWorkspace.remotePath}` : ""}
+            </div>
+          )}
           <button
             className="sidebar-settings__action"
             disabled={!activeWorkspace?.remoteUrl}
             onClick={() => activeWorkspace?.remoteUrl && useCanvasStore.getState().openPreview(normalizeRemoteUrl(activeWorkspace.remoteUrl))}
           >
-            Open remote preview
+            Open production preview
           </button>
           <label className="sidebar-settings__toggle">
             <input
@@ -423,50 +421,12 @@ export default function Navbar() {
             />
             <span>Multi-folder on same project</span>
           </label>
-          <div className="sidebar-settings__label">Media</div>
-          <input
-            className={`sidebar-settings__input ${mediaError ? "is-error" : ""}`}
-            value={mediaDraft}
-            placeholder="Paste Spotify, YouTube, YouTube Music, or Apple Music"
-            onChange={(event) => {
-              setMediaDraft(event.target.value);
-              setMediaError(false);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") saveMedia();
-            }}
-          />
-          <button className="sidebar-settings__action" onClick={saveMedia}>
-            Set media
-          </button>
           <button
             className="sidebar-settings__action"
             onClick={() => useCanvasStore.getState().clearBoardMarks()}
           >
             Clear drawings
           </button>
-          <label className="sidebar-settings__toggle">
-            <input
-              type="checkbox"
-              checked={spotifyPlayerOpen}
-              onChange={(event) => setSpotifyPlayerOpen(event.target.checked)}
-              disabled={!spotifyEmbedUrl}
-            />
-            <span>Show player</span>
-          </label>
-          {spotifyEmbedUrl && (
-            <button
-              className="sidebar-settings__action sidebar-settings__action--danger"
-              onClick={() => {
-                setSpotifyEmbedUrl(null);
-                setSpotifyPlayerOpen(false);
-                setMediaDraft("");
-                setMediaError(false);
-              }}
-            >
-              Remove
-            </button>
-          )}
           <input
             ref={fileRef}
             type="file"

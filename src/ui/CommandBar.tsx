@@ -462,17 +462,17 @@ async function run(text: string): Promise<string | null> {
   }
 
   if (
-    /\b(remote|server|production|prod|remot[oa])\b/i.test(lower) &&
+    /\b(remote|server|production|prod|vps|remot[oa])\b/i.test(lower) &&
     /\b(open|apri|preview|anteprima|mostra)\b/i.test(lower)
   ) {
     const state = useCanvasStore.getState();
     const active = state.workspaces.find((ws) => ws.id === state.activeWorkspaceId);
     const remoteUrl = active?.remoteUrl?.trim();
-    if (!remoteUrl) return "No remote server set for this workspace";
+    if (!remoteUrl) return "No production/VPS URL set for this workspace";
     const normalized = /^https?:\/\//i.test(remoteUrl) ? remoteUrl : `https://${remoteUrl}`;
     state.openPreview(normalized);
-    state.pushCanvasActivity(`Opened remote preview ${normalized}`);
-    return `Opened remote preview ${normalized}`;
+    state.pushCanvasActivity(`Opened production preview ${normalized}`);
+    return `Opened production preview ${normalized}`;
   }
 
   const urlMatch = t.match(

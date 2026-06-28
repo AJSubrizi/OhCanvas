@@ -99,6 +99,9 @@ export interface Workspace {
   folderName?: string;
   folderPath?: string | null;
   remoteUrl?: string;
+  remoteHost?: string;
+  remoteUser?: string;
+  remotePath?: string;
 }
 
 // Disk-side keys. The persistence adapter prefixes these with "ohcanvas:"
@@ -134,6 +137,9 @@ function loadWorkspaces(): Workspace[] {
         folderName: typeof raw.folderName === "string" ? raw.folderName : undefined,
         folderPath: typeof raw.folderPath === "string" || raw.folderPath === null ? raw.folderPath : undefined,
         remoteUrl: typeof raw.remoteUrl === "string" ? raw.remoteUrl : undefined,
+        remoteHost: typeof raw.remoteHost === "string" ? raw.remoteHost : undefined,
+        remoteUser: typeof raw.remoteUser === "string" ? raw.remoteUser : undefined,
+        remotePath: typeof raw.remotePath === "string" ? raw.remotePath : undefined,
       }));
   } catch {
     return defaultWorkspaces();
@@ -271,6 +277,7 @@ interface CanvasStore {
   setMultiFolderSameProject: (enabled: boolean) => void;
   setActiveWorkspaceFolder: (folder: { name: string; path: string | null } | null) => void;
   setActiveWorkspaceRemoteUrl: (url: string) => void;
+  setActiveWorkspaceRemoteServer: (fields: Partial<Pick<Workspace, "remoteHost" | "remoteUser" | "remotePath">>) => void;
   setAutoArrange: (v: boolean) => void;
   setThemeId: (id: string) => void;
   setVoiceListening: (v: boolean) => void;
@@ -410,6 +417,19 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
       const workspaces = s.workspaces.map((ws) =>
         ws.id === s.activeWorkspaceId ? { ...ws, remoteUrl: clean || undefined } : ws,
       );
+      persistWorkspaces(workspaces);
+      return { workspaces };
+    }),
+  setActiveWorkspaceRemoteServer: (fields) =>
+    set((s) => {
+      const workspaces = s.workspaces.map((ws) => {
+        if (ws.id !== s.activeWorkspaceId) return ws;
+        const next = { ...ws };
+        if ("remoteHost" in fields) next.remoteHost = fields.remoteHost?.trim() || undefined;
+        if ("remoteUser" in fields) next.remoteUser = fields.remoteUser?.trim() || undefined;
+        if ("remotePath" in fields) next.remotePath = fields.remotePath?.trim() || undefined;
+        return next;
+      });
       persistWorkspaces(workspaces);
       return { workspaces };
     }),

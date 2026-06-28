@@ -2079,6 +2079,12 @@ html, body, #root {
 .sidebar-settings__input::placeholder { color: var(--text-dim); }
 .sidebar-settings__input.is-error { border-color: rgba(248, 113, 113, 0.6); }
 
+.sidebar-settings__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 6px;
+}
+
 .sidebar-settings__hint {
   margin: 5px 2px 0;
   padding: 0 7px;
