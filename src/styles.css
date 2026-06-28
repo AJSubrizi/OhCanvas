@@ -43,6 +43,41 @@ html, body, #root {
   width: 100vw;
 }
 
+.boot-error {
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  padding: 24px;
+  background: #05060a;
+  color: var(--text);
+  font-family: var(--ui);
+  text-align: center;
+}
+
+.boot-error strong {
+  font-size: 16px;
+}
+
+.boot-error span {
+  max-width: 620px;
+  color: var(--err);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.boot-error button {
+  justify-self: center;
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  cursor: pointer;
+}
+
 .window-drag-region {
   position: fixed;
   top: 0;

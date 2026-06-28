@@ -191,7 +191,8 @@ function SelectedInspector() {
 }
 
 function ActivityFeed() {
-  const items = useCanvasStore((s) => s.canvasActivity.slice(0, 4));
+  const activity = useCanvasStore((s) => s.canvasActivity);
+  const items = activity.slice(0, 4);
   if (items.length === 0) return null;
   return (
     <div className="activity-feed" aria-label="Recent canvas activity">

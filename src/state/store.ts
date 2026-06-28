@@ -125,7 +125,16 @@ function loadWorkspaces(): Workspace[] {
     const raw = localStorage.getItem(WORKSPACES_STORAGE_KEY);
     if (!raw) return defaultWorkspaces();
     const parsed = JSON.parse(raw) as Workspace[];
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : defaultWorkspaces();
+    if (!Array.isArray(parsed) || parsed.length === 0) return defaultWorkspaces();
+    return parsed
+      .map((raw, index) => ({
+        id: typeof raw.id === "string" && raw.id ? raw.id : `ws-${index + 1}`,
+        label: typeof raw.label === "string" && raw.label ? raw.label : String(index + 1),
+        color: typeof raw.color === "string" && raw.color ? raw.color : WORKSPACE_COLORS[index % WORKSPACE_COLORS.length],
+        folderName: typeof raw.folderName === "string" ? raw.folderName : undefined,
+        folderPath: typeof raw.folderPath === "string" || raw.folderPath === null ? raw.folderPath : undefined,
+        remoteUrl: typeof raw.remoteUrl === "string" ? raw.remoteUrl : undefined,
+      }));
   } catch {
     return defaultWorkspaces();
   }
